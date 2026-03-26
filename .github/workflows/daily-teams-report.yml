@@ -12,7 +12,7 @@ jobs:
     permissions:
       contents: read
     env:
-      PERFSRAPER_TEAMS_WEBHOOK_URL: ${{ secrets.PERFSRAPER_TEAMS_WEBHOOK_URL }}
+      PERFSRAPER_TEAMS_WEBHOOK_URL: ${{ secrets.PROJECTEAGLE_TEAMS_WEBHOOK_URL }}
 
     steps:
       - name: Check out repository

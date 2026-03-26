@@ -90,7 +90,7 @@ What it does:
 
 Before it can run, add this GitHub Actions secret in your repository:
 
-- `PERFSRAPER_TEAMS_WEBHOOK_URL`
+- `PROJECTEAGLE_TEAMS_WEBHOOK_URL`
 
 After that, the workflow can be run manually from the Actions tab or on its daily schedule.
 
