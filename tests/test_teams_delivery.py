@@ -93,11 +93,17 @@ def test_build_teams_message_card_includes_summary_and_leaders():
 
     payload = build_teams_message_card(absolute_rows, relative_rows, pd.Timestamp("2026-03-26"))
 
-    assert payload["@type"] == "MessageCard"
+    assert payload["type"] == "message"
     assert payload["summary"] == "Australian Equity Fund Scorecard | 2026-03-26"
-    assert payload["sections"][0]["facts"][0]["value"] == "2"
-    assert "Firetrail High Conviction Fund" in payload["sections"][2]["text"]
-    assert "Airlie Australian Share Fund" in payload["sections"][4]["text"]
+    attachment = payload["attachments"][0]
+    assert attachment["contentType"] == "application/vnd.microsoft.card.adaptive"
+    content = attachment["content"]
+    assert content["type"] == "AdaptiveCard"
+    assert content["body"][2]["facts"][0]["value"] == "2"
+    assert "Firetrail High Conviction Fund" in content["body"][3]["items"][3]["text"]
+    assert "Airlie Australian Share Fund" in content["body"][5]["text"]
+    assert content["body"][-1]["type"] == "Table"
+    assert len(content["body"][-1]["rows"]) == 4
 
 
 def test_send_teams_message_card_posts_json():
