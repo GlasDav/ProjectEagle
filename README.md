@@ -2,6 +2,8 @@
 
 PerfSraper builds a total-return performance dashboard for a set of Australian equity funds and compares them with the S&P/ASX 200 Accumulation Index.
 
+By default, reports are calculated as of `T-2` so every fund and the benchmark are measured from the same two-business-day-lagged reference point unless you explicitly pass `--as-of`.
+
 ## Core Rules
 
 - Every reported number must be a total return.
@@ -64,6 +66,8 @@ py main.py --no-cache --export html --output-dir reports --send-teams
 
 This works well for standard channels because the channel gets a concise daily summary card while the local `reports/` folder keeps the full styled HTML output.
 
+The Teams card and the HTML export both use the same `T-2` as-of date by default, so benchmark and fund returns stay aligned.
+
 If your webhook URL is an older Microsoft 365 connector URL, plan to replace it with a Teams Workflows webhook before April 30, 2026.
 
 ## Daily Automation On Windows
@@ -86,6 +90,7 @@ What it does:
 - runs on GitHub-hosted Linux runners
 - posts the Teams summary card from GitHub instead of your PC
 - uploads the generated HTML report as a workflow artifact
+- calculates the report as of `T-2` in `Australia/Sydney`
 - handles Sydney daylight saving by checking the local `Australia/Sydney` hour before sending
 
 Before it can run, add this GitHub Actions secret in your repository:

@@ -111,8 +111,8 @@ def test_send_teams_message_card_posts_json():
     captured: dict[str, object] = {}
 
     class FakeResponse:
-        def raise_for_status(self):
-            return None
+        status_code = 200
+        text = ""
 
     class FakeSession:
         def post(self, url, json, timeout):
@@ -132,3 +132,24 @@ def test_send_teams_message_card_posts_json():
     assert captured["url"] == "https://example.test/webhook"
     assert captured["timeout"] == 20
     assert captured["json"] == payload
+
+
+def test_send_teams_message_card_raises_useful_error():
+    absolute_rows, relative_rows = _sample_rows()
+
+    class FakeResponse:
+        status_code = 400
+        text = "Webhook is no longer valid."
+
+    class FakeSession:
+        def post(self, url, json, timeout):
+            return FakeResponse()
+
+    with pytest.raises(RuntimeError, match="Webhook is no longer valid"):
+        send_teams_message_card(
+            webhook_url="https://example.test/webhook",
+            absolute_rows=absolute_rows,
+            relative_rows=relative_rows,
+            as_of_date=pd.Timestamp("2026-03-26"),
+            session=FakeSession(),
+        )

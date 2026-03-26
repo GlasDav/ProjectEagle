@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 import yaml
 
 import main
+
+
+def test_default_as_of_date_uses_t_minus_2():
+    assert main.default_as_of_date(pd.Timestamp("2026-03-26")) == pd.Timestamp("2026-03-24")
 
 
 def test_pipeline_smoke(tmp_path, monkeypatch):

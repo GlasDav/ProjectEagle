@@ -19,6 +19,7 @@ from teams_delivery import load_teams_webhook_url, send_teams_message_card
 from total_return import build_total_return_index
 
 LOGGER = logging.getLogger(__name__)
+DEFAULT_REPORT_LAG_DAYS = 2
 
 
 @dataclass
@@ -115,12 +116,22 @@ def fetch_data(
     return frame
 
 
-def resolve_as_of_date(benchmark_tri: pd.Series, requested_as_of: str | None) -> pd.Timestamp:
+def default_as_of_date(reference_date: pd.Timestamp | None = None) -> pd.Timestamp:
+    anchor = (reference_date or pd.Timestamp.today()).normalize()
+    return anchor - pd.Timedelta(days=DEFAULT_REPORT_LAG_DAYS)
+
+
+def resolve_requested_as_of_date(requested_as_of: str | None) -> pd.Timestamp:
+    if requested_as_of:
+        return pd.Timestamp(requested_as_of).normalize()
+    return default_as_of_date()
+
+
+def resolve_as_of_date(benchmark_tri: pd.Series, requested_as_of: pd.Timestamp) -> pd.Timestamp:
     if benchmark_tri.empty:
         raise RuntimeError("Benchmark series is empty.")
 
-    target = pd.Timestamp(requested_as_of) if requested_as_of else pd.Timestamp.today().normalize()
-    resolved = nearest_on_or_before(benchmark_tri, target)
+    resolved = nearest_on_or_before(benchmark_tri, requested_as_of)
     if resolved is None:
         raise RuntimeError("No benchmark data available on or before the requested as-of date.")
     return resolved
@@ -201,7 +212,7 @@ def main() -> int:
         if not fund_configs:
             raise SystemExit(f"No fund names matched '{args.fund}'.")
 
-    requested_as_of = pd.Timestamp(args.as_of) if args.as_of else pd.Timestamp.today().normalize()
+    requested_as_of = resolve_requested_as_of_date(args.as_of)
     start_date = (requested_as_of - pd.DateOffset(years=5, months=1)).strftime("%Y-%m-%d")
 
     benchmark_frame = fetch_data(
@@ -215,7 +226,7 @@ def main() -> int:
         raise SystemExit("Benchmark fetch failed. Cannot calculate relative performance without benchmark data.")
 
     benchmark_tri = build_total_return_index(benchmark_frame, benchmark_config["nav_type"])
-    as_of_date = resolve_as_of_date(benchmark_tri, args.as_of)
+    as_of_date = resolve_as_of_date(benchmark_tri, requested_as_of)
     benchmark_returns = calculate_returns(benchmark_tri, as_of_date)
     benchmark_result = FundResult(
         name=benchmark_config["name"],

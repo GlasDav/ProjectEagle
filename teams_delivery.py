@@ -192,5 +192,8 @@ def send_teams_message_card(
     payload = build_teams_message_card(absolute_rows, relative_rows, as_of_date)
     http = session or requests.Session()
     response = http.post(webhook_url, json=payload, timeout=20)
-    response.raise_for_status()
+    if response.status_code >= 400:
+        body = response.text.strip()
+        snippet = body[:500] if body else "<empty response body>"
+        raise RuntimeError(f"Teams webhook returned HTTP {response.status_code}: {snippet}")
     return payload

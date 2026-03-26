@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           LOCAL_HOUR=$(TZ=Australia/Sydney date +%H)
-          REPORT_DATE=$(TZ=Australia/Sydney date +%F)
+          REPORT_DATE=$(TZ=Australia/Sydney date -d '2 days ago' +%F)
           echo "local_hour=$LOCAL_HOUR" >> "$GITHUB_OUTPUT"
           echo "report_date=$REPORT_DATE" >> "$GITHUB_OUTPUT"
 
@@ -47,7 +47,7 @@ jobs:
         shell: bash
         run: |
           if [ -z "$PERFSRAPER_TEAMS_WEBHOOK_URL" ]; then
-            echo "Missing GitHub Actions secret: PERFSRAPER_TEAMS_WEBHOOK_URL" >&2
+            echo "Missing GitHub Actions secret: PROJECTEAGLE_TEAMS_WEBHOOK_URL" >&2
             exit 1
           fi
 
