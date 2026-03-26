@@ -51,7 +51,7 @@ py main.py --no-cache --export html --output-dir reports
 
 ## Teams Delivery
 
-Teams delivery posts an Adaptive Card into a channel webhook with the scorecard summary at the top and the full absolute performance table for all funds at the bottom, while keeping the full HTML report archived locally in `reports/`.
+Teams delivery posts an Adaptive Card into a channel webhook with the scorecard summary at the top and the full benchmark-relative performance table for all funds at the bottom, while keeping the full HTML report archived locally in `reports/`.
 
 Required environment variable:
 

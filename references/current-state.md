@@ -5,9 +5,9 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 ## As Of March 26, 2026
 
 - Benchmark: S&P/ASX 200 Accumulation via `^AXJT`
-- Live funds: 17
+- Live funds: 13
 - Disabled placeholders: 8
-- Live source mix: 4 `yfinance` funds and 13 scraper-backed `ex_distribution` funds
+- Live source mix: 13 scraper-backed `ex_distribution` funds
 
 ## Active Invariants
 
@@ -16,6 +16,11 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - `ex_distribution` series should explicitly model distribution timing where the source does not already provide ex-price history on the distribution row.
 
 ## Recent Fixes
+
+### Benchmark-relative Teams delivery
+
+- The Teams card now shows the full benchmark-relative performance table rather than the absolute table.
+- The benchmark row is pinned to the top of that Teams table, and the default lineup excludes the four comparison funds that duplicated broad index coverage.
 
 ### Distribution timing
 
@@ -44,10 +49,6 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 ## Live Funds
 
-- Vanguard Australian Shares ETF
-- iShares Core S&P/ASX 200 ETF
-- Magellan Global Fund (Open Class)
-- Vanguard MSCI Index International Shares ETF
 - Fidelity Australian Equities Fund
 - Firetrail High Conviction Fund
 - Airlie Australian Share Fund

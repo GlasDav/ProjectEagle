@@ -104,6 +104,10 @@ def test_build_teams_message_card_includes_summary_and_leaders():
     assert "Airlie Australian Share Fund" in content["body"][5]["text"]
     assert content["body"][-1]["type"] == "Table"
     assert len(content["body"][-1]["rows"]) == 4
+    assert content["body"][-1]["rows"][1]["cells"][0]["items"][0]["text"] == "S&P/ASX 200 Accumulation"
+    assert content["body"][-1]["rows"][1]["cells"][0]["items"][0]["weight"] == "Bolder"
+    assert content["body"][-1]["rows"][2]["cells"][0]["items"][0]["text"].startswith("Firetrail High Conviction Fund")
+    assert content["body"][-1]["rows"][2]["cells"][0]["items"][0]["color"] == "Good"
 
 
 def test_build_teams_message_card_uses_legacy_format_for_legacy_webhook():
@@ -117,9 +121,10 @@ def test_build_teams_message_card_uses_legacy_format_for_legacy_webhook():
     )
 
     assert payload["@type"] == "MessageCard"
-    assert payload["sections"][-1]["title"] == "Full performance table"
+    assert payload["sections"][-1]["title"] == "Full relative performance table"
     assert "Fund" in payload["sections"][-1]["text"]
-    assert "Firetrail High Conviction Fund" in payload["sections"][-1]["text"]
+    assert "**S&P/ASX 200 Accumulation**" in payload["sections"][-1]["text"]
+    assert "🟢 **Firetrail High Conviction Fund" in payload["sections"][-1]["text"]
 
 
 def test_send_teams_message_card_posts_json():

@@ -30,6 +30,10 @@ def _format_fund_label(row: dict) -> str:
     return label
 
 
+def _is_firetrail(row: dict) -> bool:
+    return str(row.get("Fund", "")).casefold() == "firetrail high conviction fund"
+
+
 def _is_legacy_connector_webhook(webhook_url: str | None) -> bool:
     if not webhook_url:
         return False
@@ -61,6 +65,24 @@ def _value_text_block(value: float | None, *, error: bool = False, header: bool 
     return _text_block(_format_percent(value), color=color)
 
 
+def _relative_table_rows(absolute_rows: list[dict], relative_rows: list[dict]) -> list[dict]:
+    benchmark = next((row for row in absolute_rows if row.get("is_benchmark")), None)
+    rows: list[dict] = []
+    if benchmark is not None:
+        rows.append(
+            {
+                "Fund": benchmark["Fund"],
+                "is_benchmark": True,
+                "error": False,
+                "stale_days": benchmark.get("stale_days", 0),
+                "latest_date": benchmark.get("latest_date"),
+                **{period: 0.0 for period in PERIODS},
+            }
+        )
+    rows.extend(relative_rows)
+    return rows
+
+
 def _snapshot(absolute_rows: list[dict], relative_rows: list[dict]) -> dict[str, Any]:
     benchmark = next((row for row in absolute_rows if row.get("is_benchmark")), None)
     funds = [row for row in absolute_rows if not row.get("is_benchmark")]
@@ -78,13 +100,22 @@ def _snapshot(absolute_rows: list[dict], relative_rows: list[dict]) -> dict[str,
     }
 
 
+def _legacy_fund_label(row: dict) -> str:
+    label = _format_fund_label(row)
+    if row.get("is_benchmark"):
+        return f"**{label}**"
+    if _is_firetrail(row):
+        return f"🟢 **{label}**"
+    return label
+
+
 def _build_plaintext_table(rows: list[dict]) -> str:
     headers = ["Fund", *[f"{period} p.a." if period in {"3Y", "5Y"} else period for period in PERIODS]]
     rendered_rows = []
     for row in rows:
         rendered_rows.append(
             [
-                _format_fund_label(row),
+                _legacy_fund_label(row),
                 *[_format_percent(None if row.get("error") else row.get(period)) for period in PERIODS],
             ]
         )
@@ -110,6 +141,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
     best_relative = snapshot["best_relative"]
+    table_rows_source = _relative_table_rows(absolute_rows, relative_rows)
 
     benchmark_text = (
         f"MTD: {_format_percent(benchmark.get('MTD'))}  \n12M: {_format_percent(benchmark.get('12M'))}  \n3Y p.a.: {_format_percent(benchmark.get('3Y'))}"
@@ -147,10 +179,11 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
         }
     ]
 
-    for row in absolute_rows:
+    for row in table_rows_source:
         label_block = _text_block(
             _format_fund_label(row),
-            weight="Bolder" if row.get("is_benchmark") else None,
+            weight="Bolder" if row.get("is_benchmark") or _is_firetrail(row) else None,
+            color="Good" if _is_firetrail(row) else None,
         )
         cells = [{"type": "TableCell", "items": [label_block]}]
         for period in PERIODS:
@@ -200,8 +233,8 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
             },
             _text_block("Top 12M funds", weight="Bolder", size="Medium"),
             _text_block(top_funds),
-            _text_block("Full performance table", weight="Bolder", size="Medium"),
-            _text_block("The table below shows absolute total-return performance for every fund in the report."),
+            _text_block("Full relative performance table", weight="Bolder", size="Medium"),
+            _text_block("The table below shows return above or below the benchmark for every fund. The benchmark row is 0 by definition."),
             table,
         ],
     }
@@ -224,6 +257,7 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
     best_relative = snapshot["best_relative"]
+    table_rows_source = _relative_table_rows(absolute_rows, relative_rows)
 
     benchmark_text = (
         f"MTD: {_format_percent(benchmark.get('MTD'))}  \n12M: {_format_percent(benchmark.get('12M'))}  \n3Y p.a.: {_format_percent(benchmark.get('3Y'))}"
@@ -246,7 +280,7 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
         else "No 12M excess-return leader is available."
     )
 
-    table_text = _build_plaintext_table(absolute_rows)
+    table_text = _build_plaintext_table(table_rows_source)
 
     return {
         "@type": "MessageCard",
@@ -271,7 +305,7 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
             {"title": "Best 12M excess return", "text": best_relative_text, "markdown": True},
             {"title": "Top 12M funds", "text": top_funds, "markdown": True},
             {
-                "title": "Full performance table",
+                "title": "Full relative performance table",
                 "text": table_text,
                 "markdown": True,
             },

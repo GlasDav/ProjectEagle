@@ -6,21 +6,25 @@ benchmark:
 
 funds:
   - name: "Vanguard Australian Shares ETF"
+    enabled: false
     source: yfinance
     ticker: "VAS.AX"
     nav_type: adjusted_close
 
   - name: "iShares Core S&P/ASX 200 ETF"
+    enabled: false
     source: yfinance
     ticker: "IOZ.AX"
     nav_type: adjusted_close
 
   - name: "Magellan Global Fund (Open Class)"
+    enabled: false
     source: yfinance
     ticker: "MGOC.AX"
     nav_type: adjusted_close
 
   - name: "Vanguard MSCI Index International Shares ETF"
+    enabled: false
     source: yfinance
     ticker: "VGS.AX"
     nav_type: adjusted_close
