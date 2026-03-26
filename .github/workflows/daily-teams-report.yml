@@ -1,0 +1,78 @@
+name: Daily Teams Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 23 * * *"
+    - cron: "0 0 * * *"
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      PERFSRAPER_TEAMS_WEBHOOK_URL: ${{ secrets.PERFSRAPER_TEAMS_WEBHOOK_URL }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve Sydney schedule window
+        id: schedule
+        shell: bash
+        run: |
+          LOCAL_HOUR=$(TZ=Australia/Sydney date +%H)
+          REPORT_DATE=$(TZ=Australia/Sydney date +%F)
+          echo "local_hour=$LOCAL_HOUR" >> "$GITHUB_OUTPUT"
+          echo "report_date=$REPORT_DATE" >> "$GITHUB_OUTPUT"
+
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$LOCAL_HOUR" = "10" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip outside 10:00 Australia/Sydney
+        if: steps.schedule.outputs.should_run != 'true'
+        run: echo "Skipping scheduled run because local Sydney time is not 10:00."
+
+      - name: Validate Teams webhook secret
+        if: steps.schedule.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          if [ -z "$PERFSRAPER_TEAMS_WEBHOOK_URL" ]; then
+            echo "Missing GitHub Actions secret: PERFSRAPER_TEAMS_WEBHOOK_URL" >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        if: steps.schedule.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate report and post to Teams
+        if: steps.schedule.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          python main.py \
+            --no-cache \
+            --as-of "${{ steps.schedule.outputs.report_date }}" \
+            --export html \
+            --output-dir reports \
+            --send-teams
+
+      - name: Upload HTML artifact
+        if: steps.schedule.outputs.should_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fund-report-${{ steps.schedule.outputs.report_date }}
+          path: reports/*.html
+          if-no-files-found: error

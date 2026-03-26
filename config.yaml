@@ -1,0 +1,198 @@
+benchmark:
+  name: "S&P/ASX 200 Accumulation"
+  source: yfinance
+  ticker: "^AXJT"
+  nav_type: total_return
+
+funds:
+  - name: "Vanguard Australian Shares ETF"
+    source: yfinance
+    ticker: "VAS.AX"
+    nav_type: adjusted_close
+
+  - name: "iShares Core S&P/ASX 200 ETF"
+    source: yfinance
+    ticker: "IOZ.AX"
+    nav_type: adjusted_close
+
+  - name: "Magellan Global Fund (Open Class)"
+    source: yfinance
+    ticker: "MGOC.AX"
+    nav_type: adjusted_close
+
+  - name: "Vanguard MSCI Index International Shares ETF"
+    source: yfinance
+    ticker: "VGS.AX"
+    nav_type: adjusted_close
+
+  - name: "Fidelity Australian Equities Fund"
+    source: scraper
+    scraper_id: "fidelity_csv"
+    fund_code: "46094"
+    price_field: "Redemption price"
+    distribution_timing: next_price_date
+    nav_type: ex_distribution
+
+  - name: "Firetrail High Conviction Fund"
+    source: scraper
+    scraper_id: "firetrail_wpdatatable"
+    url: "https://firetrail.com/funds/firetrail-australian-high-conviction-fund/"
+    table_desc_id: "table_2_desc"
+    price_field: "Exit Price"
+    distribution_field: "Distribution"
+    distribution_timing: next_price_date
+    nav_type: ex_distribution
+
+  - name: "Airlie Australian Share Fund"
+    source: scraper
+    scraper_id: "airlie_downloads"
+    url: "https://www.airliefundsmanagement.com.au/funds/airlie-australian-share-fund/"
+    fund_class: "D"
+    price_field: "Exit"
+    nav_type: ex_distribution
+
+  - name: "Ausbil Active Equity"
+    source: scraper
+    scraper_id: "ausbil_fe_prices"
+    fund_options_url: "https://digital.feprecisionplus.com/ausbil-fc-unitpricing/en-au/ausbil-fc-cr/DownloadTool/FundOptions"
+    download_tool_url: "https://digital.feprecisionplus.com/ausbil-fc-unitpricing/en-au/ausbil-fc-cr/DownloadTool"
+    grs_project_id: "96780076"
+    project_name: "ausbil-fc-unitpricing"
+    citi_code: "N3U5"
+    price_component: "Bid"
+    distribution_page_url: "https://www.ausbil.com.au/performance/distributions"
+    distribution_fund_name: "Ausbil Australian Active Equity Fund"
+    nav_type: ex_distribution
+
+  - name: "Greencape High Conviction"
+    source: scraper
+    scraper_id: "feprecision_downloadtool"
+    fund_options_url: "https://digital.feprecisionplus.com/FidanteFunds/en-au/Fidante/DownloadTool/FundOptions"
+    download_tool_url: "https://digital.feprecisionplus.com/FidanteFunds/en-au/Fidante/DownloadTool"
+    grs_project_id: "95400108"
+    project_name: "fidantefunds"
+    citi_code: "L1M8"
+    price_component: "Bid"
+    nav_type: ex_distribution
+
+  - name: "Greencape Broadcap"
+    source: scraper
+    scraper_id: "feprecision_downloadtool"
+    fund_options_url: "https://digital.feprecisionplus.com/FidanteFunds/en-au/Fidante/DownloadTool/FundOptions"
+    download_tool_url: "https://digital.feprecisionplus.com/FidanteFunds/en-au/Fidante/DownloadTool"
+    grs_project_id: "95400108"
+    project_name: "fidantefunds"
+    citi_code: "L1M7"
+    price_component: "Bid"
+    nav_type: ex_distribution
+
+  # Not in the default run yet because stable public historical NAV + distribution
+  # endpoints have not been wired in. Keeping them here as disabled placeholders
+  # means the app stays autonomous by default instead of depending on manual CSVs.
+  - name: "Regal Australian Long Short Equity Fund"
+    enabled: false
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "L1 Capital Catalyst Fund"
+    enabled: false
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "Northcape Core"
+    enabled: false
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "Perpetual SHARE-PLUS Long Short"
+    source: scraper
+    scraper_id: "perpetual_family"
+    portfolio_id: "618"
+    fund_id: "3008"
+    price_field: "Exit Price"
+    nav_type: ex_distribution
+
+  - name: "DNR High Conviction"
+    enabled: false
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "Perpetual Industrial"
+    source: scraper
+    scraper_id: "perpetual_family"
+    portfolio_id: "127"
+    fund_id: "3003"
+    price_field: "Exit Price"
+    nav_type: ex_distribution
+
+  - name: "Chester High Conviction"
+    enabled: false
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "Bennelong Concentrated"
+    source: scraper
+    scraper_id: "bennelong_sheet_file"
+    sheet_file_id: "11"
+    price_field: "Redemption"
+    nav_type: ex_distribution
+
+  - name: "Auscap High Conviction"
+    enabled: false
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "ECP Growth Companies"
+    source: scraper
+    scraper_id: "ecp_downloads"
+    download_code: "ECPALLGCF"
+    price_field: "ex_nav_price"
+    nav_type: ex_distribution
+
+  - name: "Perpetual Pure Value"
+    source: scraper
+    scraper_id: "perpetual_family"
+    portfolio_id: "411"
+    fund_id: "3007"
+    price_field: "Exit Price"
+    nav_type: ex_distribution
+
+  - name: "Selector High Conviction"
+    enabled: false
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "Hyperion Growth"
+    enabled: false
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "Smallco Broadcap"
+    source: scraper
+    scraper_id: "smallco_monthly_history"
+    url: "https://www.smallco.com.au/performance/sbf/"
+    price_field: "Exit Price**"
+    nav_type: ex_distribution
+
+  - name: "Pendal Australian Focus Fund"
+    source: scraper
+    scraper_id: "pendal_history_csv"
+    product_id: "219"
+    price_field: "Exit Price"
+    nav_type: ex_distribution
