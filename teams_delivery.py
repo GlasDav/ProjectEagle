@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import urlparse
 from typing import Any
 
 import pandas as pd
@@ -27,6 +28,15 @@ def _format_fund_label(row: dict) -> str:
     if row.get("stale_days", 0) > 0 and row.get("latest_date") is not None:
         label = f"{label} (as of {pd.Timestamp(row['latest_date']):%Y-%m-%d})"
     return label
+
+
+def _is_legacy_connector_webhook(webhook_url: str | None) -> bool:
+    if not webhook_url:
+        return False
+    parsed = urlparse(webhook_url)
+    host = (parsed.netloc or "").casefold()
+    path = (parsed.path or "").casefold()
+    return "webhook.office.com" in host or "/incomingwebhook/" in path
 
 
 def _text_block(text: str, *, weight: str | None = None, size: str | None = None, color: str | None = None, wrap: bool = True) -> dict[str, Any]:
@@ -68,7 +78,34 @@ def _snapshot(absolute_rows: list[dict], relative_rows: list[dict]) -> dict[str,
     }
 
 
-def build_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date) -> dict[str, Any]:
+def _build_plaintext_table(rows: list[dict]) -> str:
+    headers = ["Fund", *[f"{period} p.a." if period in {"3Y", "5Y"} else period for period in PERIODS]]
+    rendered_rows = []
+    for row in rows:
+        rendered_rows.append(
+            [
+                _format_fund_label(row),
+                *[_format_percent(None if row.get("error") else row.get(period)) for period in PERIODS],
+            ]
+        )
+
+    widths = [len(header) for header in headers]
+    for row in rendered_rows:
+        for index, value in enumerate(row):
+            widths[index] = min(max(widths[index], len(value)), 42 if index == 0 else 10)
+
+    def fit(value: str, width: int) -> str:
+        return value if len(value) <= width else value[: max(width - 1, 1)] + "…"
+
+    lines = []
+    lines.append(" | ".join(fit(header, widths[index]).ljust(widths[index]) for index, header in enumerate(headers)))
+    lines.append("-|-".join("-" * width for width in widths))
+    for row in rendered_rows:
+        lines.append(" | ".join(fit(value, widths[index]).ljust(widths[index]) for index, value in enumerate(row)))
+    return "\n".join(lines)
+
+
+def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date) -> dict[str, Any]:
     snapshot = _snapshot(absolute_rows, relative_rows)
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
@@ -182,6 +219,77 @@ def build_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict
     }
 
 
+def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date) -> dict[str, Any]:
+    snapshot = _snapshot(absolute_rows, relative_rows)
+    benchmark = snapshot["benchmark"]
+    best_absolute = snapshot["best_absolute"]
+    best_relative = snapshot["best_relative"]
+
+    benchmark_text = (
+        f"MTD: {_format_percent(benchmark.get('MTD'))}  \n12M: {_format_percent(benchmark.get('12M'))}  \n3Y p.a.: {_format_percent(benchmark.get('3Y'))}"
+        if benchmark is not None
+        else "Benchmark data unavailable."
+    )
+    top_funds = (
+        "  \n".join(f"- {row['Fund']}: {_format_percent(row.get('12M'))}" for row in snapshot["leaders"])
+        if snapshot["leaders"]
+        else "No 12M fund leaderboard is available."
+    )
+    best_absolute_text = (
+        f"{best_absolute['Fund']} leads on 12M total return at {_format_percent(best_absolute.get('12M'))}."
+        if best_absolute is not None
+        else "No 12M total-return leader is available."
+    )
+    best_relative_text = (
+        f"{best_relative['Fund']} leads on 12M excess return at {_format_percent(best_relative.get('12M'))}."
+        if best_relative is not None
+        else "No 12M excess-return leader is available."
+    )
+
+    table_text = _build_plaintext_table(absolute_rows)
+
+    return {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": "1F6A5B",
+        "summary": f"Australian Equity Fund Scorecard | {pd.Timestamp(as_of_date):%Y-%m-%d}",
+        "title": f"Australian Equity Fund Scorecard | {pd.Timestamp(as_of_date):%Y-%m-%d}",
+        "text": "All figures are total return. Relative highlights are measured against the S&P/ASX 200 Accumulation benchmark.",
+        "sections": [
+            {
+                "activityTitle": "Daily total-return snapshot",
+                "facts": [
+                    {"name": "Live funds", "value": str(snapshot["fund_count"])},
+                    {"name": "Ahead of benchmark (12M)", "value": f"{snapshot['ahead_count']} / {snapshot['fund_count']}"},
+                    {"name": "Benchmark 12M", "value": _format_percent(None if benchmark is None else benchmark.get("12M"))},
+                    {"name": "Stale sources", "value": str(snapshot["stale_count"])},
+                ],
+                "markdown": True,
+            },
+            {"title": "Benchmark", "text": benchmark_text, "markdown": True},
+            {"title": "Best 12M total return", "text": best_absolute_text, "markdown": True},
+            {"title": "Best 12M excess return", "text": best_relative_text, "markdown": True},
+            {"title": "Top 12M funds", "text": top_funds, "markdown": True},
+            {
+                "title": "Full performance table",
+                "text": table_text,
+                "markdown": True,
+            },
+        ],
+    }
+
+
+def build_teams_message_card(
+    absolute_rows: list[dict],
+    relative_rows: list[dict],
+    as_of_date,
+    webhook_url: str | None = None,
+) -> dict[str, Any]:
+    if _is_legacy_connector_webhook(webhook_url):
+        return _build_legacy_teams_message_card(absolute_rows, relative_rows, as_of_date)
+    return _build_adaptive_teams_message_card(absolute_rows, relative_rows, as_of_date)
+
+
 def send_teams_message_card(
     webhook_url: str,
     absolute_rows: list[dict],
@@ -189,7 +297,7 @@ def send_teams_message_card(
     as_of_date,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    payload = build_teams_message_card(absolute_rows, relative_rows, as_of_date)
+    payload = build_teams_message_card(absolute_rows, relative_rows, as_of_date, webhook_url=webhook_url)
     http = session or requests.Session()
     response = http.post(webhook_url, json=payload, timeout=20)
     if response.status_code >= 400:

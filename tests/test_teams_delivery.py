@@ -106,6 +106,22 @@ def test_build_teams_message_card_includes_summary_and_leaders():
     assert len(content["body"][-1]["rows"]) == 4
 
 
+def test_build_teams_message_card_uses_legacy_format_for_legacy_webhook():
+    absolute_rows, relative_rows = _sample_rows()
+
+    payload = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-26"),
+        webhook_url="https://tenant.webhook.office.com/webhookb2/example/IncomingWebhook/example",
+    )
+
+    assert payload["@type"] == "MessageCard"
+    assert payload["sections"][-1]["title"] == "Full performance table"
+    assert "Fund" in payload["sections"][-1]["text"]
+    assert "Firetrail High Conviction Fund" in payload["sections"][-1]["text"]
+
+
 def test_send_teams_message_card_posts_json():
     absolute_rows, relative_rows = _sample_rows()
     captured: dict[str, object] = {}

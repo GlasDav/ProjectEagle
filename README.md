@@ -68,6 +68,8 @@ This works well for standard channels because the channel gets a concise daily s
 
 The Teams card and the HTML export both use the same `T-2` as-of date by default, so benchmark and fund returns stay aligned.
 
+Legacy `webhook.office.com` connector URLs automatically use the older MessageCard format for better rendering compatibility, while newer webhook endpoints use Adaptive Cards.
+
 If your webhook URL is an older Microsoft 365 connector URL, plan to replace it with a Teams Workflows webhook before April 30, 2026.
 
 ## Daily Automation On Windows
