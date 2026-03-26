@@ -102,10 +102,13 @@ def test_build_teams_message_card_includes_summary_and_leaders():
     assert content["body"][2]["facts"][0]["value"] == "2"
     assert "Firetrail High Conviction Fund" in content["body"][3]["items"][3]["text"]
     assert "Airlie Australian Share Fund" in content["body"][5]["text"]
+    assert content["body"][6]["text"] == "Full performance table"
+    assert content["body"][7]["text"].startswith("As at 2026-03-26.")
     assert content["body"][-1]["type"] == "Table"
     assert len(content["body"][-1]["rows"]) == 4
     assert content["body"][-1]["rows"][1]["cells"][0]["items"][0]["text"] == "S&P/ASX 200 Accumulation"
     assert content["body"][-1]["rows"][1]["cells"][0]["items"][0]["weight"] == "Bolder"
+    assert content["body"][-1]["rows"][1]["cells"][1]["items"][0]["text"] == "1.2%"
     assert content["body"][-1]["rows"][2]["cells"][0]["items"][0]["text"].startswith("Firetrail High Conviction Fund")
     assert content["body"][-1]["rows"][2]["cells"][0]["items"][0]["color"] == "Good"
 
@@ -119,12 +122,17 @@ def test_build_teams_message_card_uses_legacy_format_for_legacy_webhook():
         pd.Timestamp("2026-03-26"),
         webhook_url="https://tenant.webhook.office.com/webhookb2/example/IncomingWebhook/example",
     )
+    table_section = payload["sections"][-1]
 
     assert payload["@type"] == "MessageCard"
-    assert payload["sections"][-1]["title"] == "Full relative performance table"
-    assert "Fund" in payload["sections"][-1]["text"]
-    assert "**S&P/ASX 200 Accumulation**" in payload["sections"][-1]["text"]
-    assert "🟢 **Firetrail High Conviction Fund" in payload["sections"][-1]["text"]
+    assert table_section["title"] == "Full performance table (as at 2026-03-26)"
+    assert table_section["text"].startswith(
+        "Benchmark row shows absolute benchmark total returns. Fund rows show excess returns versus the benchmark."
+    )
+    assert "Fund" in table_section["text"]
+    assert "**S&P/ASX 200 Accumulation**" in table_section["text"]
+    assert "1.2%" in table_section["text"]
+    assert "Firetrail High Conviction Fund" in table_section["text"]
 
 
 def test_send_teams_message_card_posts_json():

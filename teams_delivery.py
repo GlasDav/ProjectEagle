@@ -65,7 +65,7 @@ def _value_text_block(value: float | None, *, error: bool = False, header: bool 
     return _text_block(_format_percent(value), color=color)
 
 
-def _relative_table_rows(absolute_rows: list[dict], relative_rows: list[dict]) -> list[dict]:
+def _table_rows_with_benchmark_absolute(absolute_rows: list[dict], relative_rows: list[dict]) -> list[dict]:
     benchmark = next((row for row in absolute_rows if row.get("is_benchmark")), None)
     rows: list[dict] = []
     if benchmark is not None:
@@ -73,10 +73,10 @@ def _relative_table_rows(absolute_rows: list[dict], relative_rows: list[dict]) -
             {
                 "Fund": benchmark["Fund"],
                 "is_benchmark": True,
-                "error": False,
+                "error": benchmark.get("error", False),
                 "stale_days": benchmark.get("stale_days", 0),
                 "latest_date": benchmark.get("latest_date"),
-                **{period: 0.0 for period in PERIODS},
+                **{period: benchmark.get(period) for period in PERIODS},
             }
         )
     rows.extend(relative_rows)
@@ -141,7 +141,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
     best_relative = snapshot["best_relative"]
-    table_rows_source = _relative_table_rows(absolute_rows, relative_rows)
+    table_rows_source = _table_rows_with_benchmark_absolute(absolute_rows, relative_rows)
 
     benchmark_text = (
         f"MTD: {_format_percent(benchmark.get('MTD'))}  \n12M: {_format_percent(benchmark.get('12M'))}  \n3Y p.a.: {_format_percent(benchmark.get('3Y'))}"
@@ -233,8 +233,11 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
             },
             _text_block("Top 12M funds", weight="Bolder", size="Medium"),
             _text_block(top_funds),
-            _text_block("Full relative performance table", weight="Bolder", size="Medium"),
-            _text_block("The table below shows return above or below the benchmark for every fund. The benchmark row is 0 by definition."),
+            _text_block("Full performance table", weight="Bolder", size="Medium"),
+            _text_block(
+                f"As at {pd.Timestamp(as_of_date):%Y-%m-%d}. The benchmark row shows absolute benchmark total returns. "
+                "Fund rows show excess returns versus the benchmark."
+            ),
             table,
         ],
     }
@@ -257,7 +260,7 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
     best_relative = snapshot["best_relative"]
-    table_rows_source = _relative_table_rows(absolute_rows, relative_rows)
+    table_rows_source = _table_rows_with_benchmark_absolute(absolute_rows, relative_rows)
 
     benchmark_text = (
         f"MTD: {_format_percent(benchmark.get('MTD'))}  \n12M: {_format_percent(benchmark.get('12M'))}  \n3Y p.a.: {_format_percent(benchmark.get('3Y'))}"
@@ -305,8 +308,12 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
             {"title": "Best 12M excess return", "text": best_relative_text, "markdown": True},
             {"title": "Top 12M funds", "text": top_funds, "markdown": True},
             {
-                "title": "Full relative performance table",
-                "text": table_text,
+                "title": f"Full performance table (as at {pd.Timestamp(as_of_date):%Y-%m-%d})",
+                "text": (
+                    "Benchmark row shows absolute benchmark total returns. "
+                    "Fund rows show excess returns versus the benchmark.\n\n"
+                    f"{table_text}"
+                ),
                 "markdown": True,
             },
         ],
