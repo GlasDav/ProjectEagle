@@ -137,11 +137,11 @@ funds:
     price_field: "Exit Price"
     nav_type: ex_distribution
 
-  - name: "Chester High Conviction"
-    enabled: false
+  - name: "Chester High Conviction Fund"
     source: scraper
-    scraper_id: "example_manager"
-    url: ""
+    scraper_id: "chester_google_sheet"
+    sheet_url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vQs522hDivfgpWBTimpoF3ZyeM-QfagF0TGvLNSveErG7OcT9TbAH2PDnXgpt0d1CqfIjYuNzN5HvD1/pub?gid=0&single=true&output=csv"
+    price_field: "Red"
     nav_type: ex_distribution
 
   - name: "Bennelong Concentrated"
@@ -173,18 +173,22 @@ funds:
     price_field: "Exit Price"
     nav_type: ex_distribution
 
-  - name: "Selector High Conviction"
-    enabled: false
+  - name: "Selector High Conviction Equity Fund"
     source: scraper
-    scraper_id: "example_manager"
-    url: ""
+    scraper_id: "selector_unit_prices_xlsx"
+    unit_prices_url: "https://cdn.prod.website-files.com/5c3cc8bfe91a85c9f0ded1a3/69ae061a75009980ad5a4de4_Wholesale%20Fund%20Unit%20Prices.xlsx"
+    sheet_name: "Wholesale Fund Unit Prices"
+    price_field: "Exit Price"
     nav_type: ex_distribution
 
-  - name: "Hyperion Growth"
-    enabled: false
+  - name: "Hyperion Australian Growth Companies Fund"
     source: scraper
-    scraper_id: "example_manager"
-    url: ""
+    scraper_id: "hyperion_price_csv"
+    prices_url: "https://www.hyperion.com.au/app/uploads/HAGF-prices.csv"
+    distribution_media_api_url: "https://www.hyperion.com.au/wp-json/wp/v2/media"
+    distribution_sheet_name: "HAGCF"
+    price_field: "Redemption Price"
+    distribution_timing: next_price_date
     nav_type: ex_distribution
 
   - name: "Smallco Broadcap"

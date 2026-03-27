@@ -493,6 +493,44 @@ def _build_smallco_price_and_distribution_frames(
     return ex_rows, distributions
 
 
+def _parse_chester_sheet_date(value: object) -> pd.Timestamp:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return pd.NaT
+    return pd.to_datetime(str(value).strip(), errors="coerce", dayfirst=True)
+
+
+def _build_chester_price_and_distribution_frames(
+    history_frame: pd.DataFrame,
+    price_field: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    required_columns = {"PriceDt", price_field}
+    if not required_columns.issubset(history_frame.columns):
+        raise ConnectorValidationError("Chester unit price history is missing required columns.")
+
+    frame = history_frame.copy()
+    frame["date"] = frame["PriceDt"].map(_parse_chester_sheet_date)
+    frame = frame.dropna(subset=["date"])
+    frame["nav"] = _to_float(frame[price_field])
+    frame["distribution"] = _to_float(frame.get("Dist", pd.Series(index=frame.index, dtype="object")))
+    frame = frame.dropna(subset=["nav"])
+
+    price_rows: list[dict[str, object]] = []
+    distribution_rows: list[dict[str, object]] = []
+
+    for date, group in frame.groupby("date", sort=True):
+        distribution_group = group[group["distribution"].fillna(0.0) != 0.0]
+        if not distribution_group.empty:
+            ex_row = distribution_group.iloc[-1]
+            price_rows.append({"date": date, "nav": ex_row["nav"]})
+            distribution_rows.append({"date": date, "distribution": float(ex_row["distribution"])})
+            continue
+
+        latest_row = group.iloc[-1]
+        price_rows.append({"date": date, "nav": latest_row["nav"]})
+
+    return pd.DataFrame(price_rows), pd.DataFrame(distribution_rows)
+
+
 def _extract_smallco_current_price(
     page_html: str,
     today: pd.Timestamp | None = None,
@@ -523,6 +561,31 @@ def _extract_smallco_current_price(
             "nav": [float(exit_match.group(1))],
         }
     )
+
+
+def _parse_selector_unit_prices_frame(
+    history_frame: pd.DataFrame,
+    price_field: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    required_columns = {"Date", price_field}
+    if not required_columns.issubset(history_frame.columns):
+        raise ConnectorValidationError("Selector unit price history is missing required columns.")
+
+    prices = pd.DataFrame(
+        {
+            "date": pd.to_datetime(history_frame["Date"], errors="coerce"),
+            "nav": _to_float(history_frame[price_field]),
+        }
+    ).dropna(subset=["date", "nav"])
+
+    distributions = pd.DataFrame(
+        {
+            "date": pd.to_datetime(history_frame["Date"], errors="coerce"),
+            "distribution": _to_float(history_frame.get("Distribution", pd.Series(index=history_frame.index, dtype="object"))),
+        }
+    ).dropna(subset=["date"])
+    distributions = distributions[distributions["distribution"].fillna(0.0) != 0.0]
+    return prices, distributions
 
 
 def _fetch_feprecision_fund_info(session: requests.Session, fund_config: dict) -> dict:
@@ -560,6 +623,104 @@ def _fetch_feprecision_history(
     )
     response.raise_for_status()
     return response.json().get("DataList") or []
+
+
+def _parse_hyperion_distribution_period_label(value: object) -> pd.Timestamp | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+
+    match = re.search(r"Distn Components for (.+)", text)
+    if match:
+        parsed = pd.to_datetime(match.group(1).strip(), errors="coerce")
+        if pd.isna(parsed):
+            return None
+        return (parsed + pd.offsets.MonthEnd(0)).normalize()
+
+    parsed = pd.to_datetime(text, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return parsed.normalize()
+
+
+def _parse_hyperion_distribution_sheet(sheet: pd.DataFrame) -> pd.DataFrame:
+    if sheet.empty:
+        return pd.DataFrame(columns=["date", "distribution"])
+
+    if str(sheet.iloc[0, 0]).strip().upper() == "APIR":
+        labels = sheet.iloc[:, 0].astype(str).str.strip()
+        cash_rows = labels[labels == "Total Cash Distribution"]
+        if cash_rows.empty:
+            return pd.DataFrame(columns=["date", "distribution"])
+
+        cash_row_index = cash_rows.index[0]
+        rows = []
+        for column_index in range(1, sheet.shape[1]):
+            period_date = _parse_hyperion_distribution_period_label(sheet.iloc[1, column_index])
+            if period_date is None:
+                continue
+            amount = pd.to_numeric(sheet.iloc[cash_row_index, column_index], errors="coerce")
+            if pd.isna(amount) or float(amount) == 0.0:
+                continue
+            rows.append({"date": period_date, "distribution": float(amount) / 100.0})
+        return pd.DataFrame(rows)
+
+    rows = []
+    for column_index in range(sheet.shape[1]):
+        period_date = _parse_hyperion_distribution_period_label(sheet.iloc[0, column_index])
+        if period_date is None:
+            continue
+        cash_labels = sheet.iloc[:, column_index].astype(str).str.strip()
+        cash_rows = cash_labels[cash_labels == "Total Cash Distribution"]
+        if cash_rows.empty or column_index + 1 >= sheet.shape[1]:
+            continue
+        amount = pd.to_numeric(sheet.iloc[cash_rows.index[0], column_index + 1], errors="coerce")
+        if pd.isna(amount) or float(amount) == 0.0:
+            continue
+        rows.append({"date": period_date, "distribution": float(amount) / 100.0})
+    return pd.DataFrame(rows)
+
+
+def _fetch_hyperion_distributions(
+    session: requests.Session,
+    media_api_url: str,
+    sheet_name: str,
+) -> pd.DataFrame:
+    response = _get_with_retry(
+        session,
+        media_api_url,
+        timeout=20,
+        params={"search": "distribution breakdown", "per_page": "100"},
+    )
+    assets = response.json()
+
+    distribution_frames: list[pd.DataFrame] = []
+    for asset in assets:
+        source_url = str(asset.get("source_url") or "")
+        if not source_url.lower().endswith(".xlsx"):
+            continue
+
+        workbook_response = _get_with_retry(session, source_url, timeout=20)
+        workbook = pd.ExcelFile(io.BytesIO(workbook_response.content))
+        if sheet_name not in workbook.sheet_names:
+            continue
+
+        parsed = _parse_hyperion_distribution_sheet(workbook.parse(sheet_name))
+        if not parsed.empty:
+            distribution_frames.append(parsed)
+
+    if not distribution_frames:
+        return pd.DataFrame(columns=["date", "distribution"])
+
+    combined = pd.concat(distribution_frames, ignore_index=True)
+    combined = combined.dropna(subset=["date"])
+    combined["date"] = pd.to_datetime(combined["date"], errors="coerce")
+    combined["distribution"] = pd.to_numeric(combined["distribution"], errors="coerce")
+    combined = combined.dropna(subset=["date", "distribution"])
+    combined = combined.sort_values("date")
+    return combined.groupby("date", as_index=False)["distribution"].last()
 
 
 def _build_feprecision_model(fund_config: dict, citi_code: str) -> dict:
@@ -996,3 +1157,76 @@ def scrape_ecp_downloads(
     distributions = distributions[distributions["distribution"] != 0]
 
     return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
+
+
+@register_scraper("chester_google_sheet")
+def scrape_chester_google_sheet(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    sheet_url = fund_config.get("sheet_url") or url
+    if not sheet_url:
+        raise ConnectorValidationError("chester_google_sheet scraper requires 'sheet_url'.")
+
+    history = pd.read_csv(io.BytesIO(_get_with_retry(session, sheet_url, timeout=20).content))
+    prices, distributions = _build_chester_price_and_distribution_frames(history, fund_config.get("price_field", "Red"))
+    return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
+
+
+@register_scraper("selector_unit_prices_xlsx")
+def scrape_selector_unit_prices_xlsx(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    workbook_url = fund_config.get("unit_prices_url") or url
+    if not workbook_url:
+        raise ConnectorValidationError("selector_unit_prices_xlsx scraper requires 'unit_prices_url'.")
+
+    workbook_response = _get_with_retry(session, workbook_url, timeout=20)
+    workbook = pd.ExcelFile(io.BytesIO(workbook_response.content))
+    sheet_name = fund_config.get("sheet_name") or workbook.sheet_names[0]
+    history = workbook.parse(sheet_name)
+    prices, distributions = _parse_selector_unit_prices_frame(history, fund_config.get("price_field", "Exit Price"))
+    return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
+
+
+@register_scraper("hyperion_price_csv")
+def scrape_hyperion_price_csv(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    prices_url = fund_config.get("prices_url") or url
+    if not prices_url:
+        raise ConnectorValidationError("hyperion_price_csv scraper requires 'prices_url'.")
+
+    price_response = _get_with_retry(session, prices_url, timeout=20)
+    price_raw = pd.read_csv(io.BytesIO(price_response.content))
+    nav_column = fund_config.get("price_field", "Redemption Price")
+    if nav_column not in price_raw.columns:
+        raise ConnectorValidationError(f"Hyperion price history is missing '{nav_column}'.")
+
+    prices = pd.DataFrame(
+        {
+            "date": pd.to_datetime(price_raw["Date"], errors="coerce"),
+            "nav": _to_float(price_raw[nav_column]),
+        }
+    ).dropna(subset=["date", "nav"])
+
+    media_api_url = fund_config.get("distribution_media_api_url", "https://www.hyperion.com.au/wp-json/wp/v2/media")
+    distributions = _fetch_hyperion_distributions(session, media_api_url, fund_config.get("distribution_sheet_name", "HAGCF"))
+    return _merge_prices_and_distributions(
+        prices,
+        distributions,
+        start_date,
+        end_date,
+        distribution_timing=fund_config.get("distribution_timing", "next_price_date"),
+    )

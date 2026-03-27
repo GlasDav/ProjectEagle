@@ -5,9 +5,9 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 ## As Of March 26, 2026
 
 - Benchmark: S&P/ASX 200 Accumulation via `^AXJT`
-- Live funds: 13
-- Disabled placeholders: 8
-- Live source mix: 13 scraper-backed `ex_distribution` funds
+- Live funds: 16
+- Disabled placeholders: 5
+- Live source mix: 16 scraper-backed `ex_distribution` funds
 
 ## Active Invariants
 
@@ -46,6 +46,9 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 - Bennelong Concentrated now downloads the public Bennelong daily unit-price sheet and uses the published distribution CPU plus ex-distribution redemption price on distribution rows.
 - Smallco Broadcap now reads the public Smallco monthly history tables and reconstructs ex-distribution month-end rows from the paired pre and post distribution entries.
+- Chester High Conviction Fund now reads Chester's public Google Sheet and preserves the ex-price row on distribution dates instead of the same-day `CUM` row.
+- Selector High Conviction Equity Fund now reads Selector's public wholesale unit-price workbook, including the embedded distribution column.
+- Hyperion Australian Growth Companies Fund now combines Hyperion's public daily price CSV with distribution breakdown workbooks discovered via the public media API.
 
 ## Live Funds
 
@@ -62,6 +65,9 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Bennelong Concentrated
 - Pendal Australian Focus Fund
 - Smallco Broadcap
+- Chester High Conviction Fund
+- Selector High Conviction Equity Fund
+- Hyperion Australian Growth Companies Fund
 
 ## Disabled Placeholders
 
@@ -69,10 +75,7 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - L1 Capital Catalyst Fund
 - Northcape Core
 - DNR High Conviction
-- Chester High Conviction
 - Auscap High Conviction
-- Selector High Conviction
-- Hyperion Growth
 
 ## Verification Baseline
 
@@ -83,3 +86,6 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
   - `py main.py --no-cache --fund "Airlie"`
   - `py main.py --no-cache --fund "Bennelong"`
   - `py main.py --no-cache --fund "Smallco"`
+  - `py main.py --no-cache --fund "Chester"`
+  - `py main.py --no-cache --fund "Selector"`
+  - `py main.py --no-cache --fund "Hyperion"`

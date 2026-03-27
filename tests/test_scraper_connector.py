@@ -6,12 +6,15 @@ import pytest
 from connectors.scraper_connector import (
     _align_distributions_to_next_price_date,
     _build_airlie_price_and_distribution_frames,
+    _build_chester_price_and_distribution_frames,
     _build_smallco_price_and_distribution_frames,
     _extract_smallco_current_price,
     _merge_prices_and_distributions,
+    _parse_hyperion_distribution_sheet,
     _parse_bennelong_history_sheet,
     _parse_perpetual_distribution_table,
     _parse_report_csv,
+    _parse_selector_unit_prices_frame,
 )
 
 
@@ -111,6 +114,115 @@ Date\tApplication\tRedemption\tDistribution CPU\tEx Dist. Redemption
         {"date": pd.Timestamp("2026-03-13"), "nav": 1.7579, "distribution": 0.0},
         {"date": pd.Timestamp("2025-12-31"), "nav": 1.9564, "distribution": pytest.approx(0.023357)},
         {"date": pd.Timestamp("2025-12-30"), "nav": 1.9540, "distribution": 0.0},
+    ]
+
+
+def test_build_chester_price_and_distribution_frames_prefers_ex_row_on_distribution_dates():
+    raw = pd.DataFrame(
+        {
+            "PriceDt": [
+                "28/06/2018 0:00:00",
+                "29/06/2018 0:00:00",
+                "29/06/2018 0:00:00",
+                "2018/2/7 12:00 AM",
+            ],
+            "App": [1.314579, 1.284971, 1.318303, 1.280423],
+            "NAV": [1.310648, 1.281127, 1.314360, 1.276593],
+            "Red": [1.306716, 1.277284, 1.310417, 1.272764],
+            "Expr1": [None, None, "CUM", None],
+            "Dist": [None, 0.033247, None, None],
+        }
+    )
+
+    prices, distributions = _build_chester_price_and_distribution_frames(raw, "Red")
+
+    assert prices.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2018-06-28"), "nav": 1.306716},
+        {"date": pd.Timestamp("2018-06-29"), "nav": 1.277284},
+        {"date": pd.Timestamp("2018-07-02"), "nav": 1.272764},
+    ]
+    assert distributions.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2018-06-29"), "distribution": pytest.approx(0.033247)}
+    ]
+
+
+def test_parse_selector_unit_prices_frame_reads_exit_price_and_distribution():
+    raw = pd.DataFrame(
+        {
+            "Date": ["2005-05-31", "2005-06-30", "2005-07-31"],
+            "Mid Price": [1.1249, 1.2358, 1.2621],
+            "Entry Price": [1.1277, 1.2389, 1.2653],
+            "Exit Price": [1.1221, 1.2327, 1.2589],
+            "Distribution": [None, 0.0198, None],
+        }
+    )
+
+    prices, distributions = _parse_selector_unit_prices_frame(raw, "Exit Price")
+
+    assert prices.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2005-05-31"), "nav": 1.1221},
+        {"date": pd.Timestamp("2005-06-30"), "nav": 1.2327},
+        {"date": pd.Timestamp("2005-07-31"), "nav": 1.2589},
+    ]
+    assert distributions.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2005-06-30"), "distribution": pytest.approx(0.0198)}
+    ]
+
+
+def test_parse_hyperion_distribution_sheet_supports_quarter_groups():
+    sheet = pd.DataFrame(
+        {
+            "Fund": [
+                "Distn Components for September 2025",
+                None,
+                "Australian sourced income",
+                "Total",
+                "Total Non Cash Distribution",
+                "Total Cash Distribution",
+            ],
+            "CPU": [None, None, "CPU", 1.677394, 0.318028, 1.359367],
+            "Spacer": [None, None, None, None, None, None],
+            "Fund.1": [
+                "Distn Components for December 2025",
+                None,
+                "Australian sourced income",
+                "Total",
+                "Total Non Cash Distribution",
+                "Total Cash Distribution",
+            ],
+            "CPU.1": [None, None, "CPU", 0.4631, 0.0, 0.4631],
+        }
+    )
+
+    parsed = _parse_hyperion_distribution_sheet(sheet)
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-09-30"), "distribution": pytest.approx(0.01359367)},
+        {"date": pd.Timestamp("2025-12-31"), "distribution": pytest.approx(0.004631)},
+    ]
+
+
+def test_parse_hyperion_distribution_sheet_supports_date_row_layout():
+    sheet = pd.DataFrame(
+        {
+            "Fund": [
+                "APIR",
+                None,
+                "Australian sourced income",
+                "Total",
+                "Total Non Cash Distribution",
+                "Total Cash Distribution",
+            ],
+            "Sep": ["BNT0003AU", pd.Timestamp("2023-09-30"), "CPU", 1.829028, 0.191957, 1.637071],
+            "Dec": [None, pd.Timestamp("2023-12-31"), "CPU", 0.069186, 0.007261, 0.061925],
+        }
+    )
+
+    parsed = _parse_hyperion_distribution_sheet(sheet)
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2023-09-30"), "distribution": pytest.approx(0.01637071)},
+        {"date": pd.Timestamp("2023-12-31"), "distribution": pytest.approx(0.00061925)},
     ]
 
 
