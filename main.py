@@ -185,6 +185,22 @@ def resolve_export_formats(export: str | None) -> set[str]:
     return set()
 
 
+def _fund_sort_key(row: dict[str, Any]) -> tuple[int, float, str]:
+    mtd = row.get("MTD")
+    if row.get("error") or mtd is None:
+        return (1, 0.0, str(row["Fund"]))
+    return (0, -float(mtd), str(row["Fund"]))
+
+
+def sort_report_rows(absolute_rows: list[dict[str, Any]], relative_rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    benchmark_rows = [row for row in absolute_rows if row.get("is_benchmark")]
+    fund_rows = [row for row in absolute_rows if not row.get("is_benchmark")]
+    ranked_funds = sorted(fund_rows, key=_fund_sort_key)
+    relative_by_fund = {row["Fund"]: row for row in relative_rows}
+    ranked_relative = [relative_by_fund[row["Fund"]] for row in ranked_funds if row["Fund"] in relative_by_fund]
+    return [*benchmark_rows, *ranked_funds], ranked_relative
+
+
 def main() -> int:
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -265,6 +281,7 @@ def main() -> int:
             absolute_rows.append(to_row(error_result))
             relative_rows.append({"Fund": fund_config["name"], "error": True, "latest_date": None, **{period: None for period in PERIODS}})
 
+    absolute_rows, relative_rows = sort_report_rows(absolute_rows, relative_rows)
     render_tables(absolute_rows, relative_rows, as_of_date)
 
     export_formats = resolve_export_formats(args.export)
