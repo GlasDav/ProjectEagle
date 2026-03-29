@@ -155,6 +155,25 @@ def _to_float(series: pd.Series) -> pd.Series:
     return pd.to_numeric(cleaned, errors="coerce")
 
 
+def _extract_pdf_text(content: bytes) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError as exc:  # pragma: no cover - exercised in live smoke checks instead
+        raise ConnectorValidationError("PDF-backed sources require the 'pypdf' package.") from exc
+
+    reader = PdfReader(io.BytesIO(content))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def _create_cloudscraper_session():
+    try:
+        import cloudscraper
+    except ImportError as exc:  # pragma: no cover - exercised in live smoke checks instead
+        raise ConnectorValidationError("Cloudflare-protected sources require the 'cloudscraper' package.") from exc
+
+    return cloudscraper.create_scraper(browser={"browser": "chrome", "platform": "windows", "mobile": False})
+
+
 def _merge_prices_and_distributions(
     price_frame: pd.DataFrame,
     distribution_frame: pd.DataFrame,
@@ -387,6 +406,44 @@ def _build_airlie_price_and_distribution_frames(
     return prices, distributions
 
 
+def _build_solaris_price_and_distribution_frames(
+    price_history: pd.DataFrame,
+    distribution_history: pd.DataFrame,
+    price_field: str,
+    ex_price_field: str,
+    distribution_field: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    required_price_columns = {"Date", price_field}
+    if not required_price_columns.issubset(price_history.columns):
+        raise ConnectorValidationError("Solaris price history is missing required columns.")
+
+    required_distribution_columns = {"Ex Date", ex_price_field, distribution_field}
+    if not required_distribution_columns.issubset(distribution_history.columns):
+        raise ConnectorValidationError("Solaris distribution history is missing required columns.")
+
+    prices = pd.DataFrame(
+        {
+            "date": pd.to_datetime(price_history["Date"], format="%d/%m/%Y", errors="coerce"),
+            "nav": _to_float(price_history[price_field]),
+        }
+    ).dropna(subset=["date", "nav"])
+
+    distributions = pd.DataFrame(
+        {
+            "date": pd.to_datetime(distribution_history["Ex Date"], format="%d/%m/%Y", errors="coerce"),
+            "nav": _to_float(distribution_history[ex_price_field]),
+            "distribution": _to_float(distribution_history[distribution_field]) / 100.0,
+        }
+    ).dropna(subset=["date", "nav"])
+    distributions = distributions[distributions["distribution"].fillna(0.0) > 0.0]
+
+    if not distributions.empty:
+        ex_price_map = distributions.set_index("date")["nav"]
+        prices["nav"] = prices["date"].map(ex_price_map).fillna(prices["nav"])
+
+    return prices, distributions.loc[:, ["date", "distribution"]]
+
+
 def _build_pendal_history_url(
     product_id: str,
     start_date: str,
@@ -531,6 +588,35 @@ def _build_chester_price_and_distribution_frames(
     return pd.DataFrame(price_rows), pd.DataFrame(distribution_rows)
 
 
+def _parse_eqt_historical_prices_page(page_html: str, fund_id: str, price_field: str) -> pd.DataFrame:
+    if price_field not in {"buy", "sell", "nav"}:
+        raise ConnectorValidationError(f"Unsupported EQT price field '{price_field}'.")
+
+    match = re.search(r'\\"data\\":\[(.*?)\],\\"pageSize\\"', page_html, flags=re.S)
+    if not match:
+        raise ConnectorValidationError("Could not find embedded EQT historical price data.")
+
+    try:
+        rows = json.loads(("[" + match.group(1) + "]").replace('\\"', '"'))
+    except json.JSONDecodeError as exc:
+        raise ConnectorValidationError("Could not decode embedded EQT historical price data.") from exc
+
+    filtered_rows = [row for row in rows if str(row.get("fundID", "")).casefold() == str(fund_id).casefold()]
+    if not filtered_rows:
+        raise ConnectorValidationError(f"No EQT historical prices found for fund '{fund_id}'.")
+
+    prices = pd.DataFrame(
+        {
+            "date": pd.to_datetime([row.get("priceDate") for row in filtered_rows], errors="coerce", utc=True),
+            "nav": pd.to_numeric([row.get(price_field) for row in filtered_rows], errors="coerce"),
+        }
+    ).dropna(subset=["date", "nav"])
+    prices["date"] = prices["date"].dt.tz_convert(None)
+    if prices.empty:
+        raise ConnectorValidationError(f"EQT historical prices for fund '{fund_id}' are empty.")
+    return prices
+
+
 def _extract_smallco_current_price(
     page_html: str,
     today: pd.Timestamp | None = None,
@@ -586,6 +672,79 @@ def _parse_selector_unit_prices_frame(
     ).dropna(subset=["date"])
     distributions = distributions[distributions["distribution"].fillna(0.0) != 0.0]
     return prices, distributions
+
+
+def _build_allan_gray_fact_sheet_candidates(page_html: str, share_class: str) -> list[str]:
+    normalized_share_class = str(share_class).strip().upper()
+    pdf_urls = re.findall(r"https://[^\"'\s]+\.pdf", page_html, flags=re.I)
+    direct_matches = [url for url in pdf_urls if f"Class-{normalized_share_class}" in url or f"Class%20{normalized_share_class}" in url]
+    if direct_matches:
+        return direct_matches
+
+    class_a_url = next((url for url in pdf_urls if "AGA-Equity-Fund-Class-A" in url and "Fact-Sheet" in url), None)
+    if not class_a_url:
+        raise ConnectorValidationError("Could not find Allan Gray equity fact sheet links on the source page.")
+
+    transformed = (
+        class_a_url.replace("AGA-Equity-Fund-Class-A", f"AGA-Equity-Fund-Class-{normalized_share_class}")
+        .replace("Class-A", f"Class-{normalized_share_class}")
+        .replace("Class%20A", f"Class%20{normalized_share_class}")
+    )
+
+    period_match = re.search(
+        r"-(January|February|March|April|May|June|July|August|September|October|November|December)-(\d{4})\.pdf$",
+        transformed,
+        flags=re.I,
+    )
+    if not period_match:
+        return [transformed]
+
+    period = pd.Timestamp(f"01 {period_match.group(1)} {period_match.group(2)}")
+    token = f"{period_match.group(1)}-{period_match.group(2)}"
+    candidates: list[str] = []
+    for months_back in range(0, 7):
+        candidate_period = period - pd.DateOffset(months=months_back)
+        candidate_token = f"{candidate_period:%B-%Y}"
+        candidate = transformed.replace(token, candidate_token)
+        if candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
+def _fetch_allan_gray_fact_sheet_text(fact_sheet_index_url: str, share_class: str) -> str:
+    scraper = _create_cloudscraper_session()
+    page_response = scraper.get(fact_sheet_index_url, timeout=20)
+    page_response.raise_for_status()
+
+    for candidate_url in _build_allan_gray_fact_sheet_candidates(page_response.text, share_class):
+        try:
+            response = scraper.get(candidate_url, timeout=30)
+            response.raise_for_status()
+        except Exception:  # noqa: BLE001
+            continue
+
+        if "pdf" not in (response.headers.get("content-type", "").lower()):
+            continue
+        return _extract_pdf_text(response.content)
+
+    raise ConnectorValidationError(f"Could not fetch an Allan Gray Class {share_class} fact sheet PDF.")
+
+
+def _parse_allan_gray_fact_sheet_distributions(pdf_text: str) -> pd.DataFrame:
+    matches = re.findall(
+        r"(30 June \d{4})\s+([0-9]+\.[0-9]+)\s+[0-9]+\.[0-9]+%",
+        pdf_text,
+        flags=re.I,
+    )
+    if not matches:
+        raise ConnectorValidationError("Could not parse Allan Gray distribution rows from the fact sheet.")
+
+    return pd.DataFrame(
+        {
+            "date": pd.to_datetime([date_text for date_text, _ in matches], format="%d %B %Y", errors="coerce"),
+            "distribution": [float(cpu_text) / 100.0 for _, cpu_text in matches],
+        }
+    ).dropna(subset=["date"])
 
 
 def _fetch_feprecision_fund_info(session: requests.Session, fund_config: dict) -> dict:
@@ -803,6 +962,34 @@ def _scrape_feprecision_dividends(
             continue
         data.append({"date": pd.to_datetime(xd_date, errors="coerce"), "distribution": amount})
     return pd.DataFrame(data)
+
+
+@register_scraper("solaris_wpdatatable")
+def scrape_solaris_wpdatatable(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    if not url:
+        raise ConnectorValidationError("solaris_wpdatatable scraper requires 'url'.")
+
+    response = _get_with_retry(session, url, timeout=20)
+    price_table = _extract_wpdatatable_rows(response.text, fund_config.get("price_table_desc_id", "table_2_desc"))
+    distribution_table = _extract_wpdatatable_rows(
+        response.text,
+        fund_config.get("distribution_table_desc_id", "table_3_desc"),
+    )
+
+    prices, distributions = _build_solaris_price_and_distribution_frames(
+        price_table,
+        distribution_table,
+        fund_config.get("price_field", "Exit Price"),
+        fund_config.get("ex_price_field", "Ex Exit Price"),
+        fund_config.get("distribution_field", "Cash Portion"),
+    )
+    return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
 
 
 @register_scraper("example_manager")
@@ -1047,6 +1234,39 @@ def scrape_perpetual_family(
     distributions = _align_distributions_to_next_price_date(prices, distributions)
 
     return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
+
+
+@register_scraper("allan_gray_eqt")
+def scrape_allan_gray_eqt(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    if not url:
+        raise ConnectorValidationError("allan_gray_eqt scraper requires 'url'.")
+
+    fund_id = fund_config.get("fund_id")
+    if not fund_id:
+        raise ConnectorValidationError("allan_gray_eqt scraper requires 'fund_id'.")
+
+    response = _get_with_retry(session, url, timeout=20)
+    prices = _parse_eqt_historical_prices_page(response.text, str(fund_id), fund_config.get("price_field", "sell"))
+
+    fact_sheet_index_url = fund_config.get("fact_sheet_index_url")
+    if not fact_sheet_index_url:
+        raise ConnectorValidationError("allan_gray_eqt scraper requires 'fact_sheet_index_url'.")
+    pdf_text = _fetch_allan_gray_fact_sheet_text(fact_sheet_index_url, str(fund_config.get("share_class", "B")))
+    distributions = _parse_allan_gray_fact_sheet_distributions(pdf_text)
+
+    return _merge_prices_and_distributions(
+        prices,
+        distributions,
+        start_date,
+        end_date,
+        distribution_timing=fund_config.get("distribution_timing", "next_price_date"),
+    )
 
 
 @register_scraper("pendal_history_csv")

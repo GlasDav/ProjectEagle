@@ -5,11 +5,15 @@ import pytest
 
 from connectors.scraper_connector import (
     _align_distributions_to_next_price_date,
+    _build_allan_gray_fact_sheet_candidates,
     _build_airlie_price_and_distribution_frames,
     _build_chester_price_and_distribution_frames,
+    _build_solaris_price_and_distribution_frames,
     _build_smallco_price_and_distribution_frames,
     _extract_smallco_current_price,
     _merge_prices_and_distributions,
+    _parse_allan_gray_fact_sheet_distributions,
+    _parse_eqt_historical_prices_page,
     _parse_hyperion_distribution_sheet,
     _parse_bennelong_history_sheet,
     _parse_perpetual_distribution_table,
@@ -100,6 +104,46 @@ def test_build_airlie_price_and_distribution_frames_uses_ex_rows():
     ]
 
 
+def test_build_solaris_price_and_distribution_frames_uses_ex_exit_price():
+    price_history = pd.DataFrame(
+        {
+            "Date": ["31/12/2025", "02/01/2026"],
+            "Entry Price": ["1.3593", "1.3398"],
+            "NAV": ["1.3552", "1.3358"],
+            "Exit Price": ["1.3511", "1.3318"],
+        }
+    )
+    distribution_history = pd.DataFrame(
+        {
+            "Ex Date": ["31/12/2025"],
+            "Entry Price": ["1.3593"],
+            "NAV": ["1.3552"],
+            "Exit Price": ["1.3511"],
+            "Ex Entry Price": ["1.3384"],
+            "Ex NAV": ["1.3344"],
+            "Ex Exit Price": ["1.3304"],
+            "Cash Portion": ["2.0852"],
+            "Franking Credits": ["0.7162"],
+        }
+    )
+
+    prices, distributions = _build_solaris_price_and_distribution_frames(
+        price_history,
+        distribution_history,
+        "Exit Price",
+        "Ex Exit Price",
+        "Cash Portion",
+    )
+
+    assert prices.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-12-31"), "nav": 1.3304},
+        {"date": pd.Timestamp("2026-01-02"), "nav": 1.3318},
+    ]
+    assert distributions.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-12-31"), "distribution": pytest.approx(0.020852)}
+    ]
+
+
 def test_parse_bennelong_history_sheet_uses_ex_distribution_redemption():
     sheet_text = """
 Date\tApplication\tRedemption\tDistribution CPU\tEx Dist. Redemption
@@ -166,6 +210,57 @@ def test_parse_selector_unit_prices_frame_reads_exit_price_and_distribution():
     ]
     assert distributions.to_dict(orient="records") == [
         {"date": pd.Timestamp("2005-06-30"), "distribution": pytest.approx(0.0198)}
+    ]
+
+
+def test_parse_eqt_historical_prices_page_extracts_sell_prices():
+    page_html = r"""
+    <script>
+    self.__next_f.push([1,"34:[\"$\",\"section\",null,{\"columns\":[],\"data\":[{\"fundPriceID\":1,\"fundID\":\"ETL0349\",\"priceDate\":\"2025-06-30T00:00:00Z\",\"buy\":1.52,\"sell\":1.51,\"nav\":1.515,\"status\":1,\"statusDescription\":\"Valid\"},{\"fundPriceID\":2,\"fundID\":\"ETL0349\",\"priceDate\":\"2025-07-01T00:00:00Z\",\"buy\":1.31,\"sell\":1.30,\"nav\":1.305,\"status\":1,\"statusDescription\":\"Valid\"}],\"pageSize\":20}"])
+    </script>
+    """
+
+    parsed = _parse_eqt_historical_prices_page(page_html, "ETL0349", "sell")
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-06-30"), "nav": 1.51},
+        {"date": pd.Timestamp("2025-07-01"), "nav": 1.30},
+    ]
+
+
+def test_build_allan_gray_fact_sheet_candidates_transforms_latest_class_a_link():
+    page_html = """
+    <a href="https://www.allangray.com.au/wp-content/uploads/AGA-Documents/Australia-and-New-Zealand/Fact-Sheets/AGA-Equity-Fund-Class-A/Allan-Gray-Australia-Equity-Fund-Fact-Sheet-Class-A-February-2026.pdf">Class A</a>
+    """
+
+    candidates = _build_allan_gray_fact_sheet_candidates(page_html, "B")
+
+    assert candidates[0] == (
+        "https://www.allangray.com.au/wp-content/uploads/AGA-Documents/Australia-and-New-Zealand/Fact-Sheets/"
+        "AGA-Equity-Fund-Class-B/Allan-Gray-Australia-Equity-Fund-Fact-Sheet-Class-B-February-2026.pdf"
+    )
+
+
+def test_parse_allan_gray_fact_sheet_distributions_reads_recent_annual_rows():
+    pdf_text = """
+Allan Gray Australia Equity Fund (Class B)
+Distributions
+Year Cents per unit Distribution return
+30 June 2025 22.8068 14.2%
+30 June 2024 13.0756 8.0%
+30 June 2023 16.1629 10.7%
+30 June 2022 15.2742 9.7%
+30 June 2021 5.8262 4.6%
+""".strip()
+
+    parsed = _parse_allan_gray_fact_sheet_distributions(pdf_text)
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-06-30"), "distribution": pytest.approx(0.228068)},
+        {"date": pd.Timestamp("2024-06-30"), "distribution": pytest.approx(0.130756)},
+        {"date": pd.Timestamp("2023-06-30"), "distribution": pytest.approx(0.161629)},
+        {"date": pd.Timestamp("2022-06-30"), "distribution": pytest.approx(0.152742)},
+        {"date": pd.Timestamp("2021-06-30"), "distribution": pytest.approx(0.058262)},
     ]
 
 

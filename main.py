@@ -26,6 +26,7 @@ DEFAULT_REPORT_LAG_DAYS = 2
 class FundResult:
     name: str
     returns: dict[str, float | None]
+    style: str = ""
     is_benchmark: bool = False
     error: bool = False
     stale_days: int = 0
@@ -162,12 +163,19 @@ def compute_result(
     if stale_days > stale_after_days:
         LOGGER.warning("%s is stale by %s days as of %s", config["name"], stale_days, as_of_date.date())
 
-    return FundResult(name=config["name"], returns=returns, stale_days=stale_days, latest_date=latest_date)
+    return FundResult(
+        name=config["name"],
+        returns=returns,
+        style=str(config.get("style") or ""),
+        stale_days=stale_days,
+        latest_date=latest_date,
+    )
 
 
 def to_row(result: FundResult) -> dict[str, Any]:
     row: dict[str, Any] = {
         "Fund": result.name,
+        "Style": result.style or "",
         "is_benchmark": result.is_benchmark,
         "error": result.error,
         "stale_days": result.stale_days,
@@ -247,6 +255,7 @@ def main() -> int:
     benchmark_result = FundResult(
         name=benchmark_config["name"],
         returns=benchmark_returns,
+        style="",
         is_benchmark=True,
         stale_days=max((as_of_date - benchmark_tri.index[-1]).days, 0),
         latest_date=benchmark_tri.index[-1],
@@ -269,6 +278,7 @@ def main() -> int:
             relative_rows.append(
                 {
                     "Fund": result.name,
+                    "Style": result.style,
                     "error": False,
                     "stale_days": result.stale_days,
                     "latest_date": result.latest_date,
@@ -277,9 +287,22 @@ def main() -> int:
             )
         except Exception as exc:
             LOGGER.warning("Failed to process %s: %s", fund_config["name"], exc)
-            error_result = FundResult(name=fund_config["name"], returns={period: None for period in PERIODS}, error=True)
+            error_result = FundResult(
+                name=fund_config["name"],
+                returns={period: None for period in PERIODS},
+                style=str(fund_config.get("style") or ""),
+                error=True,
+            )
             absolute_rows.append(to_row(error_result))
-            relative_rows.append({"Fund": fund_config["name"], "error": True, "latest_date": None, **{period: None for period in PERIODS}})
+            relative_rows.append(
+                {
+                    "Fund": fund_config["name"],
+                    "Style": str(fund_config.get("style") or ""),
+                    "error": True,
+                    "latest_date": None,
+                    **{period: None for period in PERIODS},
+                }
+            )
 
     absolute_rows, relative_rows = sort_report_rows(absolute_rows, relative_rows)
     render_tables(absolute_rows, relative_rows, as_of_date)

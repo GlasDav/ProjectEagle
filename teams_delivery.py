@@ -72,6 +72,7 @@ def _table_rows_with_benchmark_absolute(absolute_rows: list[dict], relative_rows
         rows.append(
             {
                 "Fund": benchmark["Fund"],
+                "Style": benchmark.get("Style", ""),
                 "is_benchmark": True,
                 "error": benchmark.get("error", False),
                 "stale_days": benchmark.get("stale_days", 0),
@@ -110,12 +111,13 @@ def _legacy_fund_label(row: dict) -> str:
 
 
 def _build_plaintext_table(rows: list[dict]) -> str:
-    headers = ["Fund", *[f"{period} p.a." if period in {"3Y", "5Y"} else period for period in PERIODS]]
+    headers = ["Fund", "Style", *[f"{period} p.a." if period in {"3Y", "5Y"} else period for period in PERIODS]]
     rendered_rows = []
     for row in rows:
         rendered_rows.append(
             [
                 _legacy_fund_label(row),
+                str(row.get("Style") or ""),
                 *[_format_percent(None if row.get("error") else row.get(period)) for period in PERIODS],
             ]
         )
@@ -171,7 +173,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
         {"title": "Stale sources", "value": str(snapshot["stale_count"])},
     ]
 
-    headers = ["Fund", *[f"{period} (p.a.)" if period in {"3Y", "5Y"} else period for period in PERIODS]]
+    headers = ["Fund", "Style", *[f"{period} (p.a.)" if period in {"3Y", "5Y"} else period for period in PERIODS]]
     table_rows = [
         {
             "type": "TableRow",
@@ -185,7 +187,10 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
             weight="Bolder" if row.get("is_benchmark") or _is_firetrail(row) else None,
             color="Good" if _is_firetrail(row) else None,
         )
-        cells = [{"type": "TableCell", "items": [label_block]}]
+        cells = [
+            {"type": "TableCell", "items": [label_block]},
+            {"type": "TableCell", "items": [_text_block(str(row.get("Style") or ""))]},
+        ]
         for period in PERIODS:
             cells.append({"type": "TableCell", "items": [_value_text_block(row.get(period), error=row.get("error", False))]})
         table_rows.append({"type": "TableRow", "cells": cells})
@@ -196,7 +201,8 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
         "showGridLines": True,
         "gridStyle": "accent",
         "columns": [
-            {"width": 3.6},
+            {"width": 3.2},
+            {"width": 1.2},
             {"width": 1.0},
             {"width": 1.0},
             {"width": 1.0},

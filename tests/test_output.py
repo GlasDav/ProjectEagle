@@ -1,98 +1,88 @@
 from __future__ import annotations
 
-import pandas as pd
+from pathlib import Path
 
-from output import build_html_report, build_plaintext_report
+import pandas as pd
+from openpyxl import load_workbook
+
+from output import build_html_report, build_rich_table, export_to_excel
 
 
 def _sample_rows():
     absolute_rows = [
         {
-            "Fund": "S&P/ASX 200 Accumulation",
+            "Fund": "Benchmark",
+            "Style": "",
             "is_benchmark": True,
             "error": False,
             "stale_days": 0,
-            "latest_date": pd.Timestamp("2026-03-26"),
-            "MTD": 0.012,
-            "3M": 0.024,
-            "6M": 0.041,
-            "12M": 0.083,
-            "3Y": 0.071,
-            "5Y": 0.066,
+            "latest_date": None,
+            "MTD": 0.01,
+            "3M": 0.02,
+            "6M": 0.03,
+            "12M": 0.04,
+            "3Y": 0.05,
+            "5Y": 0.06,
         },
         {
-            "Fund": "Firetrail High Conviction Fund",
-            "error": False,
-            "stale_days": 2,
-            "latest_date": pd.Timestamp("2026-03-24"),
-            "MTD": 0.018,
-            "3M": 0.032,
-            "6M": 0.051,
-            "12M": 0.121,
-            "3Y": 0.095,
-            "5Y": 0.089,
-        },
-        {
-            "Fund": "Airlie Australian Share Fund",
+            "Fund": "Fund A",
+            "Style": "growth",
+            "is_benchmark": False,
             "error": False,
             "stale_days": 0,
-            "latest_date": pd.Timestamp("2026-03-26"),
-            "MTD": 0.009,
-            "3M": 0.021,
-            "6M": 0.038,
-            "12M": 0.099,
-            "3Y": 0.081,
-            "5Y": 0.074,
+            "latest_date": None,
+            "MTD": 0.02,
+            "3M": 0.03,
+            "6M": 0.04,
+            "12M": 0.05,
+            "3Y": 0.06,
+            "5Y": 0.07,
         },
     ]
     relative_rows = [
         {
-            "Fund": "Firetrail High Conviction Fund",
-            "error": False,
-            "stale_days": 2,
-            "latest_date": pd.Timestamp("2026-03-24"),
-            "MTD": 0.006,
-            "3M": 0.008,
-            "6M": 0.010,
-            "12M": 0.038,
-            "3Y": 0.024,
-            "5Y": 0.023,
-        },
-        {
-            "Fund": "Airlie Australian Share Fund",
+            "Fund": "Fund A",
+            "Style": "growth",
             "error": False,
             "stale_days": 0,
-            "latest_date": pd.Timestamp("2026-03-26"),
-            "MTD": -0.003,
-            "3M": -0.003,
-            "6M": -0.003,
-            "12M": 0.016,
-            "3Y": 0.010,
-            "5Y": 0.008,
-        },
+            "latest_date": None,
+            "MTD": 0.01,
+            "3M": 0.01,
+            "6M": 0.01,
+            "12M": 0.01,
+            "3Y": 0.01,
+            "5Y": 0.01,
+        }
     ]
     return absolute_rows, relative_rows
 
 
-def test_build_html_report_includes_summary_and_tables():
+def test_build_rich_table_includes_style_column():
+    absolute_rows, _ = _sample_rows()
+
+    table = build_rich_table(absolute_rows, "Example")
+
+    assert [column.header for column in table.columns] == ["Fund", "Style", "MTD", "3M", "6M", "12M", "3Y (p.a.)", "5Y (p.a.)"]
+
+
+def test_build_html_report_includes_style_column_and_values():
     absolute_rows, relative_rows = _sample_rows()
 
-    html = build_html_report(absolute_rows, relative_rows, pd.Timestamp("2026-03-26"))
+    html = build_html_report(absolute_rows, relative_rows, pd.Timestamp("2026-03-29"))
 
-    assert "Australian Equity Fund Scorecard" in html
-    assert "Funds ahead of benchmark (12M)" in html
-    assert "Top 12M funds" in html
-    assert "Return above or below benchmark" in html
-    assert "Firetrail High Conviction Fund" in html
-    assert "Public data through 2026-03-24 (2 days stale)" in html
+    assert "<th>Style</th>" in html
+    assert ">growth<" in html
 
 
-def test_build_plaintext_report_summarizes_benchmark_and_leaders():
+def test_export_to_excel_writes_style_column(tmp_path: Path):
     absolute_rows, relative_rows = _sample_rows()
+    output_path = tmp_path / "report.xlsx"
 
-    text = build_plaintext_report(absolute_rows, relative_rows, pd.Timestamp("2026-03-26"))
+    export_to_excel(absolute_rows, relative_rows, pd.Timestamp("2026-03-29"), output_path)
 
-    assert "Australian Equity Fund Scorecard (2026-03-26)" in text
-    assert "Benchmark 12M: 8.3%" in text
-    assert "Funds ahead of benchmark over 12M: 2 of 2" in text
-    assert "Best 12M total return: Firetrail High Conviction Fund (12.1%)" in text
+    workbook = load_workbook(output_path)
+    absolute_sheet = workbook["Absolute"]
+    assert absolute_sheet["A1"].value == "Fund"
+    assert absolute_sheet["B1"].value == "Style"
+    assert absolute_sheet["B2"].value is None
+    assert absolute_sheet["B3"].value == "growth"

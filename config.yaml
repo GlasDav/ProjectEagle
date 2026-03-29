@@ -35,6 +35,7 @@ funds:
     fund_code: "46094"
     price_field: "Redemption price"
     distribution_timing: next_price_date
+    style: growth
     nav_type: ex_distribution
 
   - name: "Firetrail High Conviction Fund"
@@ -45,6 +46,7 @@ funds:
     price_field: "Exit Price"
     distribution_field: "Distribution"
     distribution_timing: next_price_date
+    style: agnostic
     nav_type: ex_distribution
 
   - name: "Airlie Australian Share Fund"
@@ -53,6 +55,7 @@ funds:
     url: "https://www.airliefundsmanagement.com.au/funds/airlie-australian-share-fund/"
     fund_class: "D"
     price_field: "Exit"
+    style: agnostic
     nav_type: ex_distribution
 
   - name: "Ausbil Active Equity"
@@ -66,6 +69,7 @@ funds:
     price_component: "Bid"
     distribution_page_url: "https://www.ausbil.com.au/performance/distributions"
     distribution_fund_name: "Ausbil Australian Active Equity Fund"
+    style: growth
     nav_type: ex_distribution
 
   - name: "Greencape High Conviction"
@@ -77,6 +81,7 @@ funds:
     project_name: "fidantefunds"
     citi_code: "L1M8"
     price_component: "Bid"
+    style: agnostic
     nav_type: ex_distribution
 
   - name: "Greencape Broadcap"
@@ -88,6 +93,7 @@ funds:
     project_name: "fidantefunds"
     citi_code: "L1M7"
     price_component: "Bid"
+    style: agnostic
     nav_type: ex_distribution
 
   # Not in the default run yet because stable public historical NAV + distribution
@@ -120,6 +126,7 @@ funds:
     portfolio_id: "618"
     fund_id: "3008"
     price_field: "Exit Price"
+    style: value
     nav_type: ex_distribution
 
   - name: "DNR High Conviction"
@@ -135,6 +142,7 @@ funds:
     portfolio_id: "127"
     fund_id: "3003"
     price_field: "Exit Price"
+    style: value
     nav_type: ex_distribution
 
   - name: "Chester High Conviction Fund"
@@ -142,6 +150,7 @@ funds:
     scraper_id: "chester_google_sheet"
     sheet_url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vQs522hDivfgpWBTimpoF3ZyeM-QfagF0TGvLNSveErG7OcT9TbAH2PDnXgpt0d1CqfIjYuNzN5HvD1/pub?gid=0&single=true&output=csv"
     price_field: "Red"
+    style: agnostic
     nav_type: ex_distribution
 
   - name: "Bennelong Concentrated"
@@ -149,6 +158,7 @@ funds:
     scraper_id: "bennelong_sheet_file"
     sheet_file_id: "11"
     price_field: "Redemption"
+    style: growth
     nav_type: ex_distribution
 
   - name: "Auscap High Conviction"
@@ -163,6 +173,7 @@ funds:
     scraper_id: "ecp_downloads"
     download_code: "ECPALLGCF"
     price_field: "ex_nav_price"
+    style: growth
     nav_type: ex_distribution
 
   - name: "Perpetual Pure Value"
@@ -171,6 +182,7 @@ funds:
     portfolio_id: "411"
     fund_id: "3007"
     price_field: "Exit Price"
+    style: value
     nav_type: ex_distribution
 
   - name: "Selector High Conviction Equity Fund"
@@ -179,6 +191,7 @@ funds:
     unit_prices_url: "https://cdn.prod.website-files.com/5c3cc8bfe91a85c9f0ded1a3/69ae061a75009980ad5a4de4_Wholesale%20Fund%20Unit%20Prices.xlsx"
     sheet_name: "Wholesale Fund Unit Prices"
     price_field: "Exit Price"
+    style: agnostic
     nav_type: ex_distribution
 
   - name: "Hyperion Australian Growth Companies Fund"
@@ -189,6 +202,7 @@ funds:
     distribution_sheet_name: "HAGCF"
     price_field: "Redemption Price"
     distribution_timing: next_price_date
+    style: growth
     nav_type: ex_distribution
 
   - name: "Smallco Broadcap"
@@ -196,6 +210,7 @@ funds:
     scraper_id: "smallco_monthly_history"
     url: "https://www.smallco.com.au/performance/sbf/"
     price_field: "Exit Price**"
+    style: growth
     nav_type: ex_distribution
 
   - name: "Pendal Australian Focus Fund"
@@ -203,4 +218,27 @@ funds:
     scraper_id: "pendal_history_csv"
     product_id: "219"
     price_field: "Exit Price"
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Solaris Core Australian Equity Fund"
+    source: scraper
+    scraper_id: "solaris_wpdatatable"
+    url: "https://solariswealth.com.au/solaris-core-australian-equity-fund/"
+    price_field: "Exit Price"
+    ex_price_field: "Ex Exit Price"
+    distribution_field: "Cash Portion"
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Allan Gray Australia Equity Fund"
+    source: scraper
+    scraper_id: "allan_gray_eqt"
+    url: "https://www.eqt.com.au/Our-Services/Corporate/Fund-Services/Institutional-Funds/Historical-Prices?id=bb4ca93c-0a07-4946-b03e-6ffe3c99cd0b"
+    fund_id: "ETL0349"
+    price_field: "sell"
+    fact_sheet_index_url: "https://www.allangray.com.au/"
+    share_class: "B"
+    distribution_timing: next_price_date
+    style: value
     nav_type: ex_distribution

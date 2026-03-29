@@ -4,6 +4,8 @@ PerfSraper builds a total-return performance dashboard for a set of Australian e
 
 By default, reports are calculated as of `T-2` so every fund and the benchmark are measured from the same two-business-day-lagged reference point unless you explicitly pass `--as-of`.
 
+The rendered terminal, HTML, Excel, and Teams tables now include a `Style` column so you can scan value, growth, and style-agnostic managers without changing any ranking or return calculations.
+
 ## Core Rules
 
 - Every reported number must be a total return.
@@ -23,7 +25,20 @@ By default, reports are calculated as of `T-2` so every fund and the benchmark a
 - `yfinance` funds use adjusted close data directly.
 - Some scraper-backed funds report distributions on the cum-price row rather than the next ex-price row. Those sources use `distribution_timing: next_price_date` in `config.yaml` so distributions are reinvested against the correct tradable price.
 - Airlie historical prices are sourced from a multi-sheet workbook. The scraper reads all sheets and derives distributions from rows flagged as `ex`.
+- Solaris Core Australian Equity Fund is sourced from Solaris' public page tables for unit prices and distributions. The currently public history begins on `2021-10-18`, so 5Y output can remain `N/A` until the public source lengthens.
+- Allan Gray Australia Equity Fund is sourced from the official Equity Trustees Class B historical-prices page plus the Allan Gray Class B fact sheet distributions. This source uses `distribution_timing: next_price_date` because the published EQT prices are cum-distribution on the distribution row.
 - Scraper-backed funds can lag the report date. When that happens, the rendered tables show the fund row as `as of YYYY-MM-DD, stale Nd` so the return is not mistaken for a same-day value.
+
+## Style Mapping
+
+- `value`: Allan Gray Australia Equity Fund, Perpetual SHARE-PLUS Long Short, Perpetual Industrial, Perpetual Pure Value
+- `growth`: Fidelity Australian Equities Fund, Ausbil Active Equity, Bennelong Concentrated, ECP Growth Companies, Hyperion Australian Growth Companies Fund, Smallco Broadcap
+- `agnostic`: Firetrail High Conviction Fund, Airlie Australian Share Fund, Greencape High Conviction, Greencape Broadcap, Chester High Conviction Fund, Pendal Australian Focus Fund, Selector High Conviction Equity Fund, Solaris Core Australian Equity Fund
+
+## APIR And Morningstar Research
+
+- APIR is still useful as an identifier and metadata layer, but the public documentation points to an API-keyed data service rather than a free drop-in historical NAV feed. See [APIR ADS API docs](https://www.apir.com.au/documentations/adsapiv2) and [How APIR Codes are used](https://support.apir.com.au/hc/en-us/articles/14019438886543-How-can-APIR-Codes-be-used).
+- Morningstar Australia pages expose internal security IDs and reference a public-site GraphQL endpoint in the frontend bundle, but direct backend requests to `graphapi.prd.morningstar.com.au/graphql` were Cloudflare-blocked during investigation. For now, Morningstar is better treated as a brittle discovery aid than as the next default scraper path.
 
 ## Common Commands
 
@@ -33,6 +48,8 @@ py main.py --no-cache
 py main.py --no-cache --fund "Firetrail"
 py main.py --no-cache --fund "Fidelity"
 py main.py --no-cache --fund "Airlie"
+py main.py --no-cache --fund "Solaris"
+py main.py --no-cache --fund "Allan Gray"
 py main.py --no-cache --export xlsx
 py main.py --no-cache --export html
 py main.py --no-cache --export all

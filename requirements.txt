@@ -8,4 +8,6 @@ openpyxl>=3.1
 pyarrow>=18.1
 lxml>=6.0
 html5lib>=1.1
+cloudscraper>=1.2.71
+pypdf>=6.0
 pytest>=8.3

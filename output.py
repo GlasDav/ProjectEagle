@@ -82,6 +82,7 @@ def render_tables(absolute_rows: list[dict], relative_rows: list[dict], as_of_da
 def build_rich_table(rows: list[dict], title: str) -> Table:
     table = Table(title=title)
     table.add_column("Fund", style="bold")
+    table.add_column("Style")
     for period in PERIODS:
         label = f"{period} (p.a.)" if period in {"3Y", "5Y"} else period
         table.add_column(label, justify="right")
@@ -96,7 +97,7 @@ def build_rich_table(rows: list[dict], title: str) -> Table:
             label = f"{label} [yellow](as of {latest_label}, stale {row['stale_days']}d)[/yellow]"
 
         values = [_format_value(row.get(period), error=row.get("error", False)) for period in PERIODS]
-        table.add_row(label, *values)
+        table.add_row(label, str(row.get("Style") or ""), *values)
 
     return table
 
@@ -486,6 +487,11 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
       color: var(--red);
       background: var(--red-soft);
     }}
+    .style-label {{
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: lowercase;
+    }}
     .footer {{
       margin-top: 16px;
       padding: 18px 24px;
@@ -624,6 +630,7 @@ def _build_html_table(rows: list[dict], include_benchmark_marker: bool) -> str:
                 <div class="fund-name">{escape(str(row["Fund"]))}</div>
                 {stale_meta}
               </td>
+              <td><span class="style-label">{escape(str(row.get("Style") or ""))}</span></td>
               {cells}
             </tr>
             """
@@ -634,6 +641,7 @@ def _build_html_table(rows: list[dict], include_benchmark_marker: bool) -> str:
       <thead>
         <tr>
           <th>Fund</th>
+          <th>Style</th>
           {header_cells}
         </tr>
       </thead>
@@ -672,14 +680,18 @@ def export_to_excel(absolute_rows: list[dict], relative_rows: list[dict], as_of_
     for sheet_name in ("Absolute", "Relative"):
         worksheet = workbook[sheet_name]
         worksheet["A1"].font = Font(bold=True)
-        for row in worksheet.iter_rows(min_col=2, min_row=2):
+        header_to_column = {worksheet.cell(row=1, column=index).value: index for index in range(1, worksheet.max_column + 1)}
+        period_start_column = header_to_column.get(PERIODS[0], worksheet.max_column)
+
+        for row in worksheet.iter_rows(min_col=period_start_column, min_row=2):
             for cell in row:
                 if isinstance(cell.value, (int, float)):
                     cell.number_format = "0.0%"
 
         if worksheet.max_row >= 2 and worksheet.max_column >= 2:
+            start_column = worksheet.cell(row=1, column=period_start_column).column_letter
             last_column = worksheet.cell(row=1, column=worksheet.max_column).column_letter
-            data_range = f"B2:{last_column}{worksheet.max_row}"
+            data_range = f"{start_column}2:{last_column}{worksheet.max_row}"
             worksheet.conditional_formatting.add(
                 data_range,
                 CellIsRule(operator="greaterThanOrEqual", formula=["0"], font=Font(color="008000")),
@@ -707,7 +719,11 @@ def _rows_to_dataframe(rows: list[dict]):
     records = []
     for row in rows:
         latest_date = row.get("latest_date")
-        record = {"Fund": row["Fund"], "As Of": None if latest_date is None else str(pd.Timestamp(latest_date).date())}
+        record = {
+            "Fund": row["Fund"],
+            "Style": row.get("Style") or "",
+            "As Of": None if latest_date is None else str(pd.Timestamp(latest_date).date()),
+        }
         for period in PERIODS:
             record[period] = None if row.get("error") else row.get(period)
         records.append(record)

@@ -2,12 +2,12 @@
 
 This file is the quick onboarding reference for the live PerfSraper configuration.
 
-## As Of March 26, 2026
+## As Of March 29, 2026
 
 - Benchmark: S&P/ASX 200 Accumulation via `^AXJT`
-- Live funds: 16
+- Live funds: 18
 - Disabled placeholders: 5
-- Live source mix: 16 scraper-backed `ex_distribution` funds
+- Live source mix: 18 scraper-backed `ex_distribution` funds
 
 ## Active Invariants
 
@@ -49,6 +49,19 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Chester High Conviction Fund now reads Chester's public Google Sheet and preserves the ex-price row on distribution dates instead of the same-day `CUM` row.
 - Selector High Conviction Equity Fund now reads Selector's public wholesale unit-price workbook, including the embedded distribution column.
 - Hyperion Australian Growth Companies Fund now combines Hyperion's public daily price CSV with distribution breakdown workbooks discovered via the public media API.
+- Solaris Core Australian Equity Fund now reads Solaris' public website tables for unit prices and distributions. The publicly reachable history currently begins on `2021-10-18`, so 5Y output can remain `N/A` until Solaris publishes a longer series.
+- Allan Gray Australia Equity Fund now combines the official Equity Trustees Class B historical-prices page with annual distributions parsed from the Allan Gray Class B fact sheet. The source uses `distribution_timing: next_price_date` because the published EQT distribution row is cum-distribution.
+
+### Style metadata
+
+- Every live fund now carries `style: value|growth|agnostic` in `config.yaml`.
+- The terminal, HTML, Excel, and Teams tables all show `Style` immediately after `Fund`.
+- Style is display metadata only. Ranking, summaries, sorting, and total-return calculations are unchanged.
+
+### APIR and Morningstar investigation
+
+- APIR remains useful as a stable identifier layer, but the public material points to an API-keyed ADS service rather than a plug-and-play free historical price endpoint. See [APIR ADS API docs](https://www.apir.com.au/documentations/adsapiv2) and [How APIR Codes can be used](https://support.apir.com.au/hc/en-us/articles/14019438886543-How-can-APIR-Codes-be-used).
+- Morningstar Australia public pages expose internal IDs and frontend references to `graphapi.prd.morningstar.com.au/graphql`, but direct backend access was Cloudflare-blocked during testing. That makes Morningstar more useful for discovery and source tracing than for a durable default connector today.
 
 ## Live Funds
 
@@ -68,6 +81,8 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Chester High Conviction Fund
 - Selector High Conviction Equity Fund
 - Hyperion Australian Growth Companies Fund
+- Solaris Core Australian Equity Fund
+- Allan Gray Australia Equity Fund
 
 ## Disabled Placeholders
 
@@ -89,3 +104,5 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
   - `py main.py --no-cache --fund "Chester"`
   - `py main.py --no-cache --fund "Selector"`
   - `py main.py --no-cache --fund "Hyperion"`
+  - `py main.py --no-cache --fund "Solaris"`
+  - `py main.py --no-cache --fund "Allan Gray"`
