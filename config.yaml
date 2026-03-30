@@ -120,15 +120,6 @@ funds:
     url: ""
     nav_type: ex_distribution
 
-  - name: "Perpetual SHARE-PLUS Long Short"
-    source: scraper
-    scraper_id: "perpetual_family"
-    portfolio_id: "618"
-    fund_id: "3008"
-    price_field: "Exit Price"
-    style: value
-    nav_type: ex_distribution
-
   - name: "DNR High Conviction"
     enabled: false
     source: scraper

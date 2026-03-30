@@ -490,7 +490,6 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
     .style-label {{
       color: var(--muted);
       font-weight: 600;
-      text-transform: lowercase;
     }}
     .footer {{
       margin-top: 16px;

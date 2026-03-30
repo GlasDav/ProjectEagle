@@ -26,7 +26,7 @@ def _sample_rows():
         },
         {
             "Fund": "Fund A",
-            "Style": "growth",
+            "Style": "Growth",
             "is_benchmark": False,
             "error": False,
             "stale_days": 0,
@@ -42,7 +42,7 @@ def _sample_rows():
     relative_rows = [
         {
             "Fund": "Fund A",
-            "Style": "growth",
+            "Style": "Growth",
             "error": False,
             "stale_days": 0,
             "latest_date": None,
@@ -71,7 +71,7 @@ def test_build_html_report_includes_style_column_and_values():
     html = build_html_report(absolute_rows, relative_rows, pd.Timestamp("2026-03-29"))
 
     assert "<th>Style</th>" in html
-    assert ">growth<" in html
+    assert ">Growth<" in html
 
 
 def test_export_to_excel_writes_style_column(tmp_path: Path):
@@ -85,4 +85,4 @@ def test_export_to_excel_writes_style_column(tmp_path: Path):
     assert absolute_sheet["A1"].value == "Fund"
     assert absolute_sheet["B1"].value == "Style"
     assert absolute_sheet["B2"].value is None
-    assert absolute_sheet["B3"].value == "growth"
+    assert absolute_sheet["B3"].value == "Growth"

@@ -204,5 +204,5 @@ def test_style_propagates_to_absolute_and_relative_rows(tmp_path, monkeypatch):
 
     assert main.main() == 0
     assert captured["absolute_rows"][0]["Style"] == ""
-    assert captured["absolute_rows"][1]["Style"] == "growth"
-    assert captured["relative_rows"][0]["Style"] == "growth"
+    assert captured["absolute_rows"][1]["Style"] == "Growth"
+    assert captured["relative_rows"][0]["Style"] == "Growth"

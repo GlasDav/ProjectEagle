@@ -4,7 +4,7 @@ PerfSraper builds a total-return performance dashboard for a set of Australian e
 
 By default, reports are calculated as of `T-2` so every fund and the benchmark are measured from the same two-business-day-lagged reference point unless you explicitly pass `--as-of`.
 
-The rendered terminal, HTML, Excel, and Teams tables now include a `Style` column so you can scan value, growth, and style-agnostic managers without changing any ranking or return calculations.
+The rendered terminal, HTML, Excel, and Teams tables now include a `Style` column so you can scan `Value`, `Growth`, and `Agnostic` managers without changing any ranking or return calculations.
 
 ## Core Rules
 
@@ -31,7 +31,7 @@ The rendered terminal, HTML, Excel, and Teams tables now include a `Style` colum
 
 ## Style Mapping
 
-- `value`: Allan Gray Australia Equity Fund, Perpetual SHARE-PLUS Long Short, Perpetual Industrial, Perpetual Pure Value
+- `value`: Allan Gray Australia Equity Fund, Perpetual Industrial, Perpetual Pure Value
 - `growth`: Fidelity Australian Equities Fund, Ausbil Active Equity, Bennelong Concentrated, ECP Growth Companies, Hyperion Australian Growth Companies Fund, Smallco Broadcap
 - `agnostic`: Firetrail High Conviction Fund, Airlie Australian Share Fund, Greencape High Conviction, Greencape Broadcap, Chester High Conviction Fund, Pendal Australian Focus Fund, Selector High Conviction Equity Fund, Solaris Core Australian Equity Fund
 

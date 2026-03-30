@@ -96,6 +96,11 @@ def build_identifier(config: dict[str, Any]) -> str:
     return config.get("ticker") or config.get("scraper_id") or config.get("file") or config["name"].replace(" ", "_").lower()
 
 
+def format_style_label(style: Any) -> str:
+    text = str(style or "").strip()
+    return text.capitalize() if text else ""
+
+
 def fetch_data(
     config: dict[str, Any],
     start_date: str,
@@ -166,7 +171,7 @@ def compute_result(
     return FundResult(
         name=config["name"],
         returns=returns,
-        style=str(config.get("style") or ""),
+        style=format_style_label(config.get("style")),
         stale_days=stale_days,
         latest_date=latest_date,
     )
@@ -290,14 +295,14 @@ def main() -> int:
             error_result = FundResult(
                 name=fund_config["name"],
                 returns={period: None for period in PERIODS},
-                style=str(fund_config.get("style") or ""),
+                style=format_style_label(fund_config.get("style")),
                 error=True,
             )
             absolute_rows.append(to_row(error_result))
             relative_rows.append(
                 {
                     "Fund": fund_config["name"],
-                    "Style": str(fund_config.get("style") or ""),
+                    "Style": format_style_label(fund_config.get("style")),
                     "error": True,
                     "latest_date": None,
                     **{period: None for period in PERIODS},

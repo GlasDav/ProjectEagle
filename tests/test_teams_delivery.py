@@ -23,7 +23,7 @@ def _sample_rows():
         },
         {
             "Fund": "Fund A",
-            "Style": "growth",
+            "Style": "Growth",
             "is_benchmark": False,
             "error": False,
             "stale_days": 0,
@@ -39,7 +39,7 @@ def _sample_rows():
     relative_rows = [
         {
             "Fund": "Fund A",
-            "Style": "growth",
+            "Style": "Growth",
             "error": False,
             "stale_days": 0,
             "latest_date": None,
@@ -71,7 +71,7 @@ def test_build_teams_message_card_adaptive_includes_style_column():
 
     assert headers[1] == "Style"
     assert benchmark_row[1]["items"][0]["text"] == ""
-    assert fund_row[1]["items"][0]["text"] == "growth"
+    assert fund_row[1]["items"][0]["text"] == "Growth"
 
 
 def test_build_teams_message_card_legacy_includes_style_column():
@@ -87,4 +87,4 @@ def test_build_teams_message_card_legacy_includes_style_column():
     table_text = payload["sections"][-1]["text"]
 
     assert "Style" in table_text
-    assert "growth" in table_text
+    assert "Growth" in table_text

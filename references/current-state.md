@@ -5,9 +5,9 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 ## As Of March 29, 2026
 
 - Benchmark: S&P/ASX 200 Accumulation via `^AXJT`
-- Live funds: 18
+- Live funds: 17
 - Disabled placeholders: 5
-- Live source mix: 18 scraper-backed `ex_distribution` funds
+- Live source mix: 17 scraper-backed `ex_distribution` funds
 
 ## Active Invariants
 
@@ -71,7 +71,6 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Ausbil Active Equity
 - Greencape High Conviction
 - Greencape Broadcap
-- Perpetual SHARE-PLUS Long Short
 - Perpetual Industrial
 - ECP Growth Companies
 - Perpetual Pure Value
