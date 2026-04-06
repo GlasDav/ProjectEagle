@@ -182,6 +182,7 @@ funds:
     unit_prices_url: "https://cdn.prod.website-files.com/5c3cc8bfe91a85c9f0ded1a3/69ae061a75009980ad5a4de4_Wholesale%20Fund%20Unit%20Prices.xlsx"
     sheet_name: "Wholesale Fund Unit Prices"
     price_field: "Exit Price"
+    stale_after_days: 45
     style: agnostic
     nav_type: ex_distribution
 
@@ -230,6 +231,7 @@ funds:
     price_field: "sell"
     fact_sheet_index_url: "https://www.allangray.com.au/"
     share_class: "B"
+    stale_after_days: 35
     distribution_timing: next_price_date
     style: value
     nav_type: ex_distribution

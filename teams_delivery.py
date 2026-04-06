@@ -23,9 +23,13 @@ def _format_percent(value: float | None) -> str:
     return f"{value * 100:.1f}%"
 
 
+def _row_is_stale(row: dict) -> bool:
+    return bool(row.get("is_stale", row.get("stale_days", 0) > 0))
+
+
 def _format_fund_label(row: dict) -> str:
     label = str(row["Fund"])
-    if row.get("stale_days", 0) > 0 and row.get("latest_date") is not None:
+    if _row_is_stale(row) and row.get("latest_date") is not None:
         label = f"{label} (as of {pd.Timestamp(row['latest_date']):%Y-%m-%d})"
     return label
 
@@ -84,20 +88,83 @@ def _table_rows_with_benchmark_absolute(absolute_rows: list[dict], relative_rows
     return rows
 
 
+def _average_by_style(rows: list[dict], period: str) -> list[dict[str, object]]:
+    grouped: dict[str, list[float]] = {}
+    for row in rows:
+        if row.get("is_benchmark") or row.get("is_average") or row.get("error"):
+            continue
+        style = str(row.get("Style") or "").strip()
+        value = row.get(period)
+        if not style or value is None:
+            continue
+        grouped.setdefault(style, []).append(float(value))
+
+    averages = [
+        {"style": style, "average": sum(values) / len(values)}
+        for style, values in grouped.items()
+        if values
+    ]
+    return sorted(averages, key=lambda row: (-float(row["average"]), str(row["style"])))
+
+
+def _style_commentary(absolute_rows: list[dict], relative_rows: list[dict]) -> str:
+    absolute_styles = _average_by_style(absolute_rows, "12M")
+    relative_styles = _average_by_style(relative_rows, "12M")
+
+    if not absolute_styles and not relative_styles:
+        return "No 12M style averages are available yet."
+
+    absolute_leader = absolute_styles[0] if absolute_styles else None
+    absolute_trailer = absolute_styles[-1] if len(absolute_styles) > 1 else None
+    relative_leader = relative_styles[0] if relative_styles else None
+
+    if absolute_leader and relative_leader and absolute_leader["style"] == relative_leader["style"]:
+        commentary = (
+            f"On 12M style averages, {absolute_leader['style']} leads both total return "
+            f"({_format_percent(float(absolute_leader['average']))}) and excess return "
+            f"({_format_percent(float(relative_leader['average']))} versus benchmark)."
+        )
+    elif absolute_leader and relative_leader:
+        commentary = (
+            f"On 12M style averages, {absolute_leader['style']} leads total return at "
+            f"{_format_percent(float(absolute_leader['average']))}, while {relative_leader['style']} leads "
+            f"excess return at {_format_percent(float(relative_leader['average']))} versus benchmark."
+        )
+    elif absolute_leader:
+        commentary = (
+            f"On 12M style averages, {absolute_leader['style']} leads total return at "
+            f"{_format_percent(float(absolute_leader['average']))}."
+        )
+    else:
+        commentary = (
+            f"On 12M style averages, {relative_leader['style']} leads excess return at "
+            f"{_format_percent(float(relative_leader['average']))} versus benchmark."
+        )
+
+    if absolute_trailer is not None and absolute_leader is not None and absolute_trailer["style"] != absolute_leader["style"]:
+        commentary += (
+            f" {absolute_trailer['style']} is the weakest total-return cohort at "
+            f"{_format_percent(float(absolute_trailer['average']))}."
+        )
+    return commentary
+
+
 def _snapshot(absolute_rows: list[dict], relative_rows: list[dict]) -> dict[str, Any]:
     benchmark = next((row for row in absolute_rows if row.get("is_benchmark")), None)
-    funds = [row for row in absolute_rows if not row.get("is_benchmark")]
+    funds = [row for row in absolute_rows if not row.get("is_benchmark") and not row.get("is_average")]
+    fund_relative_rows = [row for row in relative_rows if not row.get("is_average")]
     valid_absolute = [row for row in funds if not row.get("error") and row.get("12M") is not None]
-    valid_relative = [row for row in relative_rows if not row.get("error") and row.get("12M") is not None]
+    valid_relative = [row for row in fund_relative_rows if not row.get("error") and row.get("12M") is not None]
 
     return {
         "benchmark": benchmark,
         "fund_count": len(funds),
-        "stale_count": sum(1 for row in funds if row.get("stale_days", 0) > 0),
+        "stale_count": sum(1 for row in funds if _row_is_stale(row)),
         "ahead_count": sum(1 for row in valid_relative if float(row["12M"]) > 0),
         "best_absolute": max(valid_absolute, key=lambda row: float(row["12M"]), default=None),
         "best_relative": max(valid_relative, key=lambda row: float(row["12M"]), default=None),
         "leaders": sorted(valid_absolute, key=lambda row: float(row["12M"]), reverse=True)[:5],
+        "style_commentary": _style_commentary(funds, fund_relative_rows),
     }
 
 
@@ -184,7 +251,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
     for row in table_rows_source:
         label_block = _text_block(
             _format_fund_label(row),
-            weight="Bolder" if row.get("is_benchmark") or _is_firetrail(row) else None,
+            weight="Bolder" if row.get("is_benchmark") or row.get("is_average") or _is_firetrail(row) else None,
             color="Good" if _is_firetrail(row) else None,
         )
         cells = [
@@ -235,6 +302,8 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
                     _text_block(best_absolute_text),
                     _text_block("Best 12M excess return", weight="Bolder", size="Medium"),
                     _text_block(best_relative_text),
+                    _text_block("Style lens", weight="Bolder", size="Medium"),
+                    _text_block(str(snapshot["style_commentary"])),
                 ],
             },
             _text_block("Top 12M funds", weight="Bolder", size="Medium"),
@@ -242,7 +311,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
             _text_block("Full performance table", weight="Bolder", size="Medium"),
             _text_block(
                 f"As at {pd.Timestamp(as_of_date):%Y-%m-%d}. The benchmark row shows absolute benchmark total returns. "
-                "Fund rows show excess returns versus the benchmark."
+                "Fund rows show excess returns versus the benchmark, and the Average row is the simple mean of live funds."
             ),
             table,
         ],
@@ -312,12 +381,14 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
             {"title": "Benchmark", "text": benchmark_text, "markdown": True},
             {"title": "Best 12M total return", "text": best_absolute_text, "markdown": True},
             {"title": "Best 12M excess return", "text": best_relative_text, "markdown": True},
+            {"title": "Style lens", "text": str(snapshot["style_commentary"]), "markdown": True},
             {"title": "Top 12M funds", "text": top_funds, "markdown": True},
             {
                 "title": f"Full performance table (as at {pd.Timestamp(as_of_date):%Y-%m-%d})",
                 "text": (
                     "Benchmark row shows absolute benchmark total returns. "
-                    "Fund rows show excess returns versus the benchmark.\n\n"
+                    "Fund rows show excess returns versus the benchmark. "
+                    "Average row is the simple mean of live funds.\n\n"
                     f"{table_text}"
                 ),
                 "markdown": True,

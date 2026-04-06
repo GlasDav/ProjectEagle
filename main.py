@@ -29,6 +29,7 @@ class FundResult:
     style: str = ""
     is_benchmark: bool = False
     error: bool = False
+    is_stale: bool = False
     stale_days: int = 0
     latest_date: pd.Timestamp | None = None
 
@@ -165,13 +166,15 @@ def compute_result(
 
     stale_after_days = int(config.get("stale_after_days", 5))
     stale_days = max((as_of_date - latest_date).days, 0)
-    if stale_days > stale_after_days:
+    is_stale = stale_days > stale_after_days
+    if is_stale:
         LOGGER.warning("%s is stale by %s days as of %s", config["name"], stale_days, as_of_date.date())
 
     return FundResult(
         name=config["name"],
         returns=returns,
         style=format_style_label(config.get("style")),
+        is_stale=is_stale,
         stale_days=stale_days,
         latest_date=latest_date,
     )
@@ -182,6 +185,7 @@ def to_row(result: FundResult) -> dict[str, Any]:
         "Fund": result.name,
         "Style": result.style or "",
         "is_benchmark": result.is_benchmark,
+        "is_stale": result.is_stale,
         "error": result.error,
         "stale_days": result.stale_days,
         "latest_date": result.latest_date,
@@ -212,6 +216,31 @@ def sort_report_rows(absolute_rows: list[dict[str, Any]], relative_rows: list[di
     relative_by_fund = {row["Fund"]: row for row in relative_rows}
     ranked_relative = [relative_by_fund[row["Fund"]] for row in ranked_funds if row["Fund"] in relative_by_fund]
     return [*benchmark_rows, *ranked_funds], ranked_relative
+
+
+def build_average_row(rows: list[dict[str, Any]], label: str = "Average") -> dict[str, Any] | None:
+    fund_rows = [
+        row
+        for row in rows
+        if not row.get("is_benchmark") and not row.get("is_average") and not row.get("error")
+    ]
+    if not fund_rows:
+        return None
+
+    average_row: dict[str, Any] = {
+        "Fund": label,
+        "Style": "",
+        "is_benchmark": False,
+        "is_average": True,
+        "is_stale": False,
+        "error": False,
+        "stale_days": 0,
+        "latest_date": None,
+    }
+    for period in PERIODS:
+        values = [float(row[period]) for row in fund_rows if row.get(period) is not None]
+        average_row[period] = sum(values) / len(values) if values else None
+    return average_row
 
 
 def main() -> int:
@@ -262,6 +291,7 @@ def main() -> int:
         returns=benchmark_returns,
         style="",
         is_benchmark=True,
+        is_stale=max((as_of_date - benchmark_tri.index[-1]).days, 0) > int(benchmark_config.get("stale_after_days", 5)),
         stale_days=max((as_of_date - benchmark_tri.index[-1]).days, 0),
         latest_date=benchmark_tri.index[-1],
     )
@@ -284,6 +314,7 @@ def main() -> int:
                 {
                     "Fund": result.name,
                     "Style": result.style,
+                    "is_stale": result.is_stale,
                     "error": False,
                     "stale_days": result.stale_days,
                     "latest_date": result.latest_date,
@@ -303,13 +334,21 @@ def main() -> int:
                 {
                     "Fund": fund_config["name"],
                     "Style": format_style_label(fund_config.get("style")),
+                    "is_stale": False,
                     "error": True,
+                    "stale_days": 0,
                     "latest_date": None,
                     **{period: None for period in PERIODS},
                 }
             )
 
     absolute_rows, relative_rows = sort_report_rows(absolute_rows, relative_rows)
+    absolute_average_row = build_average_row(absolute_rows)
+    if absolute_average_row is not None:
+        absolute_rows.append(absolute_average_row)
+    relative_average_row = build_average_row(relative_rows)
+    if relative_average_row is not None:
+        relative_rows.append(relative_average_row)
     render_tables(absolute_rows, relative_rows, as_of_date)
 
     export_formats = resolve_export_formats(args.export)

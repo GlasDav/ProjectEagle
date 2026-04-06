@@ -39,7 +39,7 @@ def _format_public_date(latest_date) -> str:
 
 def _plain_row_label(row: dict) -> str:
     label = str(row["Fund"])
-    if row.get("stale_days", 0) > 0:
+    if _row_is_stale(row):
         label = f"{label} (as of {_format_public_date(row.get('latest_date'))}, stale {row['stale_days']}d)"
     return label
 
@@ -49,27 +49,94 @@ def _safe_period_value(row: dict, period: str) -> float:
     return float("-inf") if value is None else float(value)
 
 
+def _row_is_stale(row: dict) -> bool:
+    return bool(row.get("is_stale", row.get("stale_days", 0) > 0))
+
+
+def _average_by_style(rows: list[dict], period: str) -> list[dict[str, object]]:
+    grouped: dict[str, list[float]] = {}
+    for row in rows:
+        if row.get("is_benchmark") or row.get("is_average") or row.get("error"):
+            continue
+        style = str(row.get("Style") or "").strip()
+        value = row.get(period)
+        if not style or value is None:
+            continue
+        grouped.setdefault(style, []).append(float(value))
+
+    averages = [
+        {"style": style, "count": len(values), "average": sum(values) / len(values)}
+        for style, values in grouped.items()
+        if values
+    ]
+    return sorted(averages, key=lambda row: (-float(row["average"]), str(row["style"])))
+
+
+def _build_style_commentary(absolute_rows: list[dict], relative_rows: list[dict]) -> str:
+    absolute_styles = _average_by_style(absolute_rows, "12M")
+    relative_styles = _average_by_style(relative_rows, "12M")
+
+    if not absolute_styles and not relative_styles:
+        return "No 12M style averages are available yet."
+
+    absolute_leader = absolute_styles[0] if absolute_styles else None
+    absolute_trailer = absolute_styles[-1] if len(absolute_styles) > 1 else None
+    relative_leader = relative_styles[0] if relative_styles else None
+
+    if absolute_leader and relative_leader and absolute_leader["style"] == relative_leader["style"]:
+        commentary = (
+            f"On 12M style averages, {absolute_leader['style']} leads both total return "
+            f"({_format_percent(float(absolute_leader['average']))}) and excess return "
+            f"({_format_percent(float(relative_leader['average']))} versus the benchmark)."
+        )
+    elif absolute_leader and relative_leader:
+        commentary = (
+            f"On 12M style averages, {absolute_leader['style']} leads total return at "
+            f"{_format_percent(float(absolute_leader['average']))}, while {relative_leader['style']} leads "
+            f"excess return at {_format_percent(float(relative_leader['average']))} versus the benchmark."
+        )
+    elif absolute_leader:
+        commentary = (
+            f"On 12M style averages, {absolute_leader['style']} leads total return at "
+            f"{_format_percent(float(absolute_leader['average']))}."
+        )
+    else:
+        commentary = (
+            f"On 12M style averages, {relative_leader['style']} leads excess return at "
+            f"{_format_percent(float(relative_leader['average']))} versus the benchmark."
+        )
+
+    if absolute_trailer is not None and absolute_leader is not None and absolute_trailer["style"] != absolute_leader["style"]:
+        commentary += (
+            f" {absolute_trailer['style']} is the weakest total-return cohort at "
+            f"{_format_percent(float(absolute_trailer['average']))}."
+        )
+    return commentary
+
+
 def _report_snapshot(absolute_rows: list[dict], relative_rows: list[dict]) -> dict[str, object]:
     benchmark = next((row for row in absolute_rows if row.get("is_benchmark")), None)
-    fund_rows = [row for row in absolute_rows if not row.get("is_benchmark")]
+    fund_rows = [row for row in absolute_rows if not row.get("is_benchmark") and not row.get("is_average")]
+    fund_relative_rows = [row for row in relative_rows if not row.get("is_average")]
     valid_absolute = [row for row in fund_rows if not row.get("error") and row.get("12M") is not None]
-    valid_relative = [row for row in relative_rows if not row.get("error") and row.get("12M") is not None]
+    valid_relative = [row for row in fund_relative_rows if not row.get("error") and row.get("12M") is not None]
 
     return {
         "benchmark": benchmark,
         "fund_rows": fund_rows,
         "live_count": len(fund_rows),
-        "stale_count": sum(1 for row in fund_rows if row.get("stale_days", 0) > 0),
+        "stale_count": sum(1 for row in fund_rows if _row_is_stale(row)),
         "ahead_count": sum(1 for row in valid_relative if float(row["12M"]) > 0),
         "best_absolute": max(valid_absolute, key=lambda row: _safe_period_value(row, "12M"), default=None),
         "best_relative": max(valid_relative, key=lambda row: _safe_period_value(row, "12M"), default=None),
         "leaders": sorted(valid_absolute, key=lambda row: _safe_period_value(row, "12M"), reverse=True)[:5],
+        "style_commentary": _build_style_commentary(fund_rows, fund_relative_rows),
     }
 
 
 def render_tables(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, console: Console | None = None) -> None:
     console = console or Console()
-    if any(row.get("stale_days", 0) > 0 for row in absolute_rows + relative_rows):
+    if any(_row_is_stale(row) for row in absolute_rows + relative_rows):
         console.print(
             "[yellow]Note: rows marked stale use the latest public fund date shown in the row label, not the report date in the title.[/yellow]"
         )
@@ -91,7 +158,9 @@ def build_rich_table(rows: list[dict], title: str) -> Table:
         label = row["Fund"]
         if row.get("is_benchmark"):
             label = f"[bold]{label}[/bold]"
-        if row.get("stale_days", 0) > 0:
+        if row.get("is_average"):
+            label = f"[bold]{label}[/bold]"
+        if _row_is_stale(row):
             latest_date = row.get("latest_date")
             latest_label = latest_date.strftime("%Y-%m-%d") if latest_date is not None else "latest public date"
             label = f"{label} [yellow](as of {latest_label}, stale {row['stale_days']}d)[/yellow]"
@@ -129,6 +198,7 @@ def build_plaintext_report(absolute_rows: list[dict], relative_rows: list[dict],
         lines.append(f"Best 12M total return: {best_absolute['Fund']} ({_format_percent(best_absolute.get('12M'))})")
     if best_relative is not None:
         lines.append(f"Best 12M excess return: {best_relative['Fund']} ({_format_percent(best_relative.get('12M'))})")
+    lines.append(f"Style lens: {snapshot['style_commentary']}")
 
     leaders = snapshot["leaders"]
     if leaders:
@@ -445,6 +515,15 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
     tbody tr.benchmark-row td:first-child {{
       background: #f0f6f2;
     }}
+    tbody tr.summary-row {{
+      background: #eef5ef;
+    }}
+    tbody tr.summary-row td {{
+      font-weight: 700;
+    }}
+    tbody tr.summary-row td:first-child {{
+      background: #eef5ef;
+    }}
     tbody tr:hover {{
       background: #f4f8f6;
     }}
@@ -568,6 +647,12 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
     </section>
 
     <section class="table-card">
+      <p class="insight-kicker">Style lens</p>
+      <h2>How styles are tracking</h2>
+      <p>{escape(str(snapshot['style_commentary']))}</p>
+    </section>
+
+    <section class="table-card">
       <p class="insight-kicker">Leaderboard</p>
       <h2>Top 12M funds</h2>
       <p>The strongest trailing-12-month total-return results among live managers.</p>
@@ -596,7 +681,7 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
 
     <section class="footer">
       Rows marked stale use the latest public fund date shown in the row, not the headline report date.
-      Three-year and five-year figures are annualized.
+      Average rows are the simple mean of live fund returns excluding the benchmark. Three-year and five-year figures are annualized.
     </section>
   </main>
 </body>
@@ -610,10 +695,14 @@ def _build_html_table(rows: list[dict], include_benchmark_marker: bool) -> str:
 
     body_rows = []
     for row in rows:
-        row_class = "benchmark-row" if include_benchmark_marker and row.get("is_benchmark") else ""
+        row_classes: list[str] = []
+        if include_benchmark_marker and row.get("is_benchmark"):
+            row_classes.append("benchmark-row")
+        if row.get("is_average"):
+            row_classes.append("summary-row")
         latest_date = row.get("latest_date")
         stale_meta = ""
-        if row.get("stale_days", 0) > 0:
+        if _row_is_stale(row):
             stale_meta = (
                 f"<div class=\"fund-meta\">Public data through {_format_public_date(latest_date)} "
                 f"({int(row['stale_days'])} day{'s' if int(row['stale_days']) != 1 else ''} stale)</div>"
@@ -624,7 +713,7 @@ def _build_html_table(rows: list[dict], include_benchmark_marker: bool) -> str:
         cells = "".join(_build_html_value_cell(row.get(period), error=row.get("error", False)) for period in PERIODS)
         body_rows.append(
             f"""
-            <tr class="{row_class}">
+            <tr class="{' '.join(row_classes)}">
               <td>
                 <div class="fund-name">{escape(str(row["Fund"]))}</div>
                 {stale_meta}
