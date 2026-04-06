@@ -351,11 +351,15 @@ funds:
     nav_type: adjusted_close
 
   - name: "AuscapAM Auscap Ex-20 Australian Equities Fund"
-    enabled: false
-    apir_code: "ACQ0001AU"
+    apir_code: "ASX6179AU"
     source: scraper
-    scraper_id: "example_manager"
-    url: ""
+    scraper_id: "gsfm_fund_tables"
+    url: "https://www.gsfm.com.au/fund-hub/auscap-ex-20-australian-equities-fund/"
+    unit_prices_url: "https://www.gsfm.com.au/funds-data/ASX6179AU/unit-prices/"
+    distribution_url: "https://www.gsfm.com.au/funds-data/ASX6179AU/distribution-data/"
+    price_field: "NAV Price"
+    ex_price_field: "Valuation price on ex-date ($)"
+    style: agnostic
     nav_type: ex_distribution
 
   - name: "RQI Australian Value (formerly Realindex)"
@@ -448,17 +452,26 @@ funds:
     nav_type: ex_distribution
 
   - name: "Macquarie Australian Shares"
-    enabled: false
-    apir_code: "MAQ0277AU"
+    aliases:
+      - "Macquarie Australian Shares Fund"
+    apir_code: "MAQ0443AU"
     source: scraper
-    scraper_id: "example_manager"
-    url: ""
+    scraper_id: "macquarie_public_json"
+    url: "https://www.macquarie.com/au/en/about/company/macquarie-asset-management/individual-investor/investments/managed-funds-and-active-etfs/equities/macquarie-australian-shares-fund.html"
+    unit_prices_meta_url: "https://www.macquarie.com/assets/mam/au_wealth/data/meta/unit_prices.json"
+    assets_base_url: "https://www.macquarie.com/assets/mam"
+    price_field: "Redemption price"
+    style: agnostic
     nav_type: ex_distribution
 
   - name: "Paradice Australian Equities"
-    enabled: false
-    apir_code: "ETL0353AU"
+    aliases:
+      - "Paradice Australian Equities Fund"
+    apir_code: "ETL8084AU"
     source: scraper
-    scraper_id: "example_manager"
-    url: ""
+    scraper_id: "paradice_price_history_csv"
+    url: "https://paradice.com/au/australian-equities/"
+    history_url: "https://paradice.com/au/australian-equities/?action=downloadpricehistory&code=ETL8084AU"
+    price_field: "Red Price ($)"
+    style: agnostic
     nav_type: ex_distribution

@@ -10,10 +10,13 @@ from connectors.scraper_connector import (
     _build_chester_price_and_distribution_frames,
     _build_first_sentier_history_file_path,
     _build_forager_price_and_distribution_frames,
+    _build_gsfm_price_and_distribution_frames,
+    _build_macquarie_history_url,
     _parse_lazard_annual_distribution_pdf_text,
     _parse_dnr_distribution_history_table,
     _parse_lazard_historical_nav,
     _parse_lazard_legacy_distribution_pdf_text,
+    _parse_macquarie_historical_price_csv,
     _build_solaris_price_and_distribution_frames,
     _build_smallco_price_and_distribution_frames,
     _extract_smallco_current_price,
@@ -28,6 +31,7 @@ from connectors.scraper_connector import (
     _parse_eqt_historical_prices_page,
     _parse_hyperion_distribution_sheet,
     _parse_bennelong_history_sheet,
+    _parse_paradice_price_history_csv,
     _parse_perpetual_distribution_table,
     _parse_report_csv,
     _parse_selector_unit_prices_frame,
@@ -660,6 +664,40 @@ def test_build_smallco_price_and_distribution_frames_uses_ex_rows():
     ]
 
 
+def test_build_gsfm_price_and_distribution_frames_uses_ex_date_valuation_price():
+    unit_prices = pd.DataFrame(
+        {
+            "As At Date": ["01-07-2025", "30-06-2025", "27-06-2025"],
+            "NAV Price": [1.2255, 1.2854, 1.2774],
+            "Exit Price": [1.2224, 1.2822, 1.2742],
+        }
+    )
+    distributions = pd.DataFrame(
+        {
+            "Period To": ["30-06-2025"],
+            "Distribution CPU1": [6.3223],
+            "Reinvestment price ($)": [1.2222],
+            "Valuation price on ex-date ($)": [1.2191],
+        }
+    )
+
+    prices, parsed_distributions = _build_gsfm_price_and_distribution_frames(
+        unit_prices,
+        distributions,
+        "NAV Price",
+        "Valuation price on ex-date ($)",
+    )
+
+    assert prices.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-07-01"), "nav": 1.2255},
+        {"date": pd.Timestamp("2025-06-30"), "nav": 1.2191},
+        {"date": pd.Timestamp("2025-06-27"), "nav": 1.2774},
+    ]
+    assert parsed_distributions.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-06-30"), "distribution": pytest.approx(0.063223)}
+    ]
+
+
 def test_extract_smallco_current_price_uses_page_header():
     html = """
 <svg>
@@ -744,4 +782,69 @@ Date,"Entry Price","Exit Price"
     assert parsed.to_dict(orient="records") == [
         {"Date": "24-Mar-2026", "Entry Price": 2.5481, "Exit Price": 2.5369},
         {"Date": "23-Mar-2026", "Entry Price": 2.5422, "Exit Price": 2.5310},
+    ]
+
+
+def test_build_macquarie_history_url_selects_apir_specific_csv():
+    payload = [
+        {
+            "accountName": "Other Fund",
+            "apirCode": "ABC0001AU",
+            "historicalPricesFileName": "au_wealth/data/fund/Other.csv",
+        },
+        {
+            "accountName": "Macquarie Australian Shares Fund",
+            "apirCode": "MAQ0443AU",
+            "historicalPricesFileName": "au_wealth/data/fund/Australian_equities/HCFFND/HCFFND/Macquarie Australian Shares Fund_HN.csv",
+        },
+    ]
+
+    url = _build_macquarie_history_url(payload, "MAQ0443AU", "https://www.macquarie.com/assets/mam")
+
+    assert url == (
+        "https://www.macquarie.com/assets/mam/au_wealth/data/fund/Australian_equities/HCFFND/HCFFND/"
+        "Macquarie%20Australian%20Shares%20Fund_HN.csv"
+    )
+
+
+def test_parse_macquarie_historical_price_csv_reconstructs_same_day_ex_prices():
+    csv_text = """
+Valuation Date,Application price,Redemption price,NAV price,CPU
+01 Apr 2026,2.1770,2.1714,2.1742,
+31 Mar 2026,2.1385,2.1329,2.1357,0.922306
+30 Mar 2026,2.1327,2.1271,2.1299,
+31 Dec 2025,2.2989,2.2929,2.2959,1.474021
+""".strip()
+
+    parsed = _parse_macquarie_historical_price_csv(csv_text, "Redemption price")
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-04-01"), "nav": 2.1714, "distribution": 0.0},
+        {"date": pd.Timestamp("2026-03-31"), "nav": pytest.approx(2.12367694), "distribution": pytest.approx(0.00922306)},
+        {"date": pd.Timestamp("2026-03-30"), "nav": 2.1271, "distribution": 0.0},
+        {"date": pd.Timestamp("2025-12-31"), "nav": pytest.approx(2.27815979), "distribution": pytest.approx(0.01474021)},
+    ]
+
+
+def test_parse_paradice_price_history_csv_prefers_ex_rows_on_distribution_dates():
+    csv_text = """
+"Unit prices for Paradice Australian Equities Fund",,,,,
+"APIR Code - ETL8084AU",,,,,
+,,,,,
+Date,"App Price ($)","Nav/Mid Price ($)","Red Price ($)",DPU,"Price Type"
+01/07/2025,1.2255,1.2224,1.2193,N/A,
+30/06/2025,1.4986,1.4956,1.4926,0.09098,EX
+30/06/2025,1.5896,1.5866,1.5836,N/A,
+27/06/2025,1.4724,1.4694,1.4665,N/A,
+""".strip()
+
+    prices, distributions = _parse_paradice_price_history_csv(csv_text, "Red Price ($)")
+
+    assert prices.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-06-27"), "nav": 1.4665},
+        {"date": pd.Timestamp("2025-06-30"), "nav": 1.4926},
+        {"date": pd.Timestamp("2025-07-01"), "nav": 1.2193},
+    ]
+    assert distributions.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-06-30"), "distribution": pytest.approx(0.09098)}
     ]

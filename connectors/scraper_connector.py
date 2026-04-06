@@ -232,6 +232,49 @@ def _parse_report_csv(csv_text: str, header_marker: str) -> pd.DataFrame:
     raise ConnectorValidationError(f"Could not find CSV header '{header_marker}'.")
 
 
+def _build_macquarie_history_url(
+    metadata_payload: list[dict[str, object]],
+    apir_code: str,
+    assets_base_url: str,
+) -> str:
+    target = str(apir_code).strip().casefold()
+    match = next(
+        (
+            row
+            for row in metadata_payload
+            if str(row.get("apirCode", "")).strip().casefold() == target
+            and str(row.get("historicalPricesFileName", "")).strip()
+        ),
+        None,
+    )
+    if match is None:
+        raise ConnectorValidationError(f"Macquarie unit-price metadata did not contain APIR '{apir_code}'.")
+
+    path = str(match["historicalPricesFileName"]).strip().lstrip("/")
+    return requests.utils.requote_uri(f"{assets_base_url.rstrip('/')}/{path}")
+
+
+def _parse_macquarie_historical_price_csv(csv_text: str, price_field: str) -> pd.DataFrame:
+    frame = pd.read_csv(StringIO(csv_text))
+    required_columns = {"Valuation Date", price_field}
+    if not required_columns.issubset(frame.columns):
+        raise ConnectorValidationError("Macquarie historical price CSV is missing required columns.")
+
+    prices = _to_float(frame[price_field])
+    distributions = _to_float(frame.get("CPU", pd.Series(index=frame.index, dtype="object"))) / 100.0
+    distribution_values = distributions.fillna(0.0)
+    use_ex_price = distribution_values != 0.0
+    nav = prices.where(~use_ex_price, prices - distribution_values)
+
+    return pd.DataFrame(
+        {
+            "date": pd.to_datetime(frame["Valuation Date"], format="%d %b %Y", errors="coerce"),
+            "nav": nav,
+            "distribution": distribution_values,
+        }
+    ).dropna(subset=["date", "nav"])
+
+
 def _extract_wpdatatable_rows(page_html: str, desc_input_id: str) -> pd.DataFrame:
     soup = BeautifulSoup(page_html, "html.parser")
     desc = soup.find("input", {"id": desc_input_id})
@@ -1000,6 +1043,87 @@ def _build_smallco_price_and_distribution_frames(
 
     distributions = cum_rows.groupby("date", as_index=False)["distribution"].sum()
     return ex_rows, distributions
+
+
+def _build_gsfm_price_and_distribution_frames(
+    unit_price_history: pd.DataFrame,
+    distribution_history: pd.DataFrame,
+    price_field: str,
+    ex_price_field: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    required_price_columns = {"As At Date", price_field}
+    if not required_price_columns.issubset(unit_price_history.columns):
+        raise ConnectorValidationError("GSFM unit price history is missing required columns.")
+
+    prices = pd.DataFrame(
+        {
+            "date": pd.to_datetime(unit_price_history["As At Date"], format="%d-%m-%Y", errors="coerce"),
+            "nav": _to_float(unit_price_history[price_field]),
+        }
+    ).dropna(subset=["date", "nav"])
+    if prices.empty:
+        raise ConnectorValidationError("GSFM unit price history did not contain any usable rows.")
+
+    if distribution_history.empty:
+        return prices, pd.DataFrame(columns=["date", "distribution"])
+
+    cpu_column = next(
+        (column for column in distribution_history.columns if str(column).strip().startswith("Distribution CPU")),
+        None,
+    )
+    required_distribution_columns = {"Period To", ex_price_field}
+    if cpu_column is None or not required_distribution_columns.issubset(distribution_history.columns):
+        raise ConnectorValidationError("GSFM distribution history is missing required columns.")
+
+    distributions = pd.DataFrame(
+        {
+            "date": pd.to_datetime(distribution_history["Period To"], format="%d-%m-%Y", errors="coerce"),
+            "nav": _to_float(distribution_history[ex_price_field]),
+            "distribution": _to_float(distribution_history[cpu_column]) / 100.0,
+        }
+    ).dropna(subset=["date", "distribution"])
+    distributions = distributions[distributions["distribution"] > 0.0]
+
+    if not distributions.empty:
+        ex_price_map = distributions.dropna(subset=["nav"]).set_index("date")["nav"]
+        prices["nav"] = prices["date"].map(ex_price_map).fillna(prices["nav"])
+
+    return prices, distributions.loc[:, ["date", "distribution"]]
+
+
+def _parse_paradice_price_history_csv(csv_text: str, price_field: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    history = _parse_report_csv(
+        csv_text,
+        'Date,"App Price ($)","Nav/Mid Price ($)","Red Price ($)",DPU,"Price Type"',
+    )
+    required_columns = {"Date", price_field}
+    if not required_columns.issubset(history.columns):
+        raise ConnectorValidationError("Paradice price history is missing required columns.")
+
+    frame = history.copy()
+    frame["date"] = pd.to_datetime(frame["Date"], format="%d/%m/%Y", errors="coerce")
+    frame["nav"] = _to_float(frame[price_field])
+    frame["distribution"] = _to_float(frame.get("DPU", pd.Series(index=frame.index, dtype="object")))
+    frame["price_type"] = frame.get("Price Type", pd.Series(index=frame.index, dtype="object")).fillna("").astype(str).str.strip().str.upper()
+    frame = frame.dropna(subset=["date", "nav"])
+
+    price_rows: list[dict[str, object]] = []
+    distribution_rows: list[dict[str, object]] = []
+
+    for date, group in frame.groupby("date", sort=True):
+        ex_group = group[(group["distribution"].fillna(0.0) != 0.0) | (group["price_type"] == "EX")]
+        if not ex_group.empty:
+            ex_row = ex_group.iloc[-1]
+            price_rows.append({"date": date, "nav": ex_row["nav"]})
+            distribution = float(ex_row["distribution"]) if pd.notna(ex_row["distribution"]) else 0.0
+            if distribution != 0.0:
+                distribution_rows.append({"date": date, "distribution": distribution})
+            continue
+
+        latest_row = group.iloc[-1]
+        price_rows.append({"date": date, "nav": latest_row["nav"]})
+
+    return pd.DataFrame(price_rows), pd.DataFrame(distribution_rows)
 
 
 def _parse_chester_sheet_date(value: object) -> pd.Timestamp:
@@ -2055,6 +2179,89 @@ def scrape_smallco_monthly_history(
     return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
 
 
+@register_scraper("gsfm_fund_tables")
+def scrape_gsfm_fund_tables(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    unit_prices_url = fund_config.get("unit_prices_url")
+    distribution_url = fund_config.get("distribution_url")
+    if not unit_prices_url or not distribution_url:
+        raise ConnectorValidationError("gsfm_fund_tables scraper requires 'unit_prices_url' and 'distribution_url'.")
+
+    price_field = fund_config.get("price_field", "NAV Price")
+    ex_price_field = fund_config.get("ex_price_field", "Valuation price on ex-date ($)")
+    history_url = _build_url_with_query(
+        str(unit_prices_url),
+        start_date=pd.Timestamp(start_date).strftime("%d-%m-%Y"),
+        end_date=pd.Timestamp(end_date).strftime("%d-%m-%Y"),
+    )
+
+    unit_prices_response = _get_with_retry(session, history_url, timeout=20)
+    unit_price_tables = _read_html_tables(unit_prices_response.text)
+    unit_price_table = next(
+        (
+            table
+            for table in unit_price_tables
+            if {"As At Date", price_field}.issubset(table.columns)
+        ),
+        None,
+    )
+    if unit_price_table is None:
+        raise ConnectorValidationError("GSFM unit price table was not found on the source page.")
+
+    distribution_response = _get_with_retry(session, str(distribution_url), timeout=20)
+    distribution_tables = _read_html_tables(distribution_response.text)
+    distribution_table = next((table for table in distribution_tables if "Period To" in table.columns), None)
+    if distribution_table is None:
+        raise ConnectorValidationError("GSFM distribution table was not found on the source page.")
+
+    prices, distributions = _build_gsfm_price_and_distribution_frames(
+        unit_price_table,
+        distribution_table,
+        price_field,
+        ex_price_field,
+    )
+    return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
+
+
+@register_scraper("macquarie_public_json")
+def scrape_macquarie_public_json(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    apir_code = fund_config.get("apir_code")
+    if not apir_code:
+        raise ConnectorValidationError("macquarie_public_json scraper requires 'apir_code'.")
+
+    metadata_url = fund_config.get(
+        "unit_prices_meta_url",
+        "https://www.macquarie.com/assets/mam/au_wealth/data/meta/unit_prices.json",
+    )
+    assets_base_url = str(fund_config.get("assets_base_url", "https://www.macquarie.com/assets/mam"))
+
+    metadata_response = _get_with_retry(session, str(metadata_url), timeout=20)
+    history_url = _build_macquarie_history_url(metadata_response.json(), str(apir_code), assets_base_url)
+
+    history_response = _get_with_retry(session, history_url, timeout=20)
+    history = _parse_macquarie_historical_price_csv(
+        history_response.text,
+        fund_config.get("price_field", "Redemption price"),
+    )
+    return _merge_prices_and_distributions(
+        history[["date", "nav"]],
+        history[["date", "distribution"]],
+        start_date,
+        end_date,
+    )
+
+
 @register_scraper("ecp_downloads")
 def scrape_ecp_downloads(
     url: str,
@@ -2093,6 +2300,26 @@ def scrape_ecp_downloads(
     ).dropna(subset=["date"])
     distributions = distributions[distributions["distribution"] != 0]
 
+    return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
+
+
+@register_scraper("paradice_price_history_csv")
+def scrape_paradice_price_history_csv(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    history_url = fund_config.get("history_url")
+    if not history_url:
+        raise ConnectorValidationError("paradice_price_history_csv scraper requires 'history_url'.")
+
+    response = _get_with_retry(session, str(history_url), timeout=20)
+    prices, distributions = _parse_paradice_price_history_csv(
+        response.text,
+        fund_config.get("price_field", "Red Price ($)"),
+    )
     return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
 
 
