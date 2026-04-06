@@ -2,12 +2,12 @@
 
 This file is the quick onboarding reference for the live PerfSraper configuration.
 
-## As Of March 29, 2026
+## As Of April 6, 2026
 
 - Benchmark: S&P/ASX 200 Accumulation via `^AXJT`
-- Live funds: 17
-- Disabled placeholders: 5
-- Live source mix: 17 scraper-backed `ex_distribution` funds
+- Live funds: 30
+- Disabled scraper placeholders: 11
+- Live source mix: 28 scraper-backed `ex_distribution` funds plus 2 ASX dual-access ETFs using `adjusted_close`
 
 ## Active Invariants
 
@@ -58,6 +58,37 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - The terminal, HTML, Excel, and Teams tables all show `Style` immediately after `Fund`.
 - Style is display metadata only. Ranking, summaries, sorting, and total-return calculations are unchanged.
 
+### Firetrail competitor coverage
+
+- `config.yaml` now represents every fund listed in `Firetrail competitors.xlsx`.
+- Exact source-backed matches stay on their existing entries, close name variants are captured via `aliases`, and the remaining names are tracked as disabled placeholders with APIR metadata where available.
+
+### First competitor implementation batch
+
+- Wavestone Australian Share Fund now rides the existing Fidante / FE Precision family via Citi code `L1L7`.
+- DNR High Conviction now scrapes the public DNR price-history workbook plus the distribution-history table on the fund page.
+- Investors Mutual Australian Share Fund now uses IML's public WordPress AJAX export endpoints for price and distribution history.
+- Perpetual Concentrated Equity Fund now uses the existing Perpetual family endpoints with the public fund page's price and distribution history IDs.
+
+### Second competitor implementation batch
+
+- Forager Australian Value now reads the public Google Sheets workbook behind Forager's Australian Shares Fund download, using `Mid Price` as the durable historical NAV field and preserving explicit distribution rows across the workbook's older and newer layouts.
+- Katana Australian Equity Fund now reads the public Katana fund page's monthly unit-price accordions, annual distribution list, and latest daily price banner, aligning June distributions to the following ex-price row.
+
+### Third competitor implementation batch
+
+- Vanguard Australian Shares Index now uses Vanguard Australia's public Personal Investor API for daily NAV history and distribution history via managed-fund port `8100`.
+- RQI Australian Value (formerly Realindex) now uses the First Sentier / RQI public historical-price download family, which exposes a full CSV with exit prices and inline distribution amounts.
+- First Sentier FSI Geared Australian Share Fund now uses that same First Sentier public history family, mapped to the current complex ETF page and its live history feed.
+- Dimensional Australian Value now rides the ASX-listed dual-access ETF ticker `DAVA.AX`, which gives total-return coverage through adjusted closes while preserving the managed-fund name via aliases.
+- Dimensional Aust Core Equity now does the same through `DACE.AX`.
+
+### Fourth competitor implementation batch
+
+- Lazard Select Australian Equity now combines Lazard's public `api/products?id=183&type=Fund` NAV history with official annual and legacy distribution PDFs for the W class, aligned to the next available price date.
+- Lazard Australian Equity (Benchmark Unconstrained) now uses the same Lazard public source family, mapped to the closest publicly exposed Australian Equity W class feed (`product_id: 182`) because Lazard's benchmark-unconstrained strategy page does not publish its own unit-price history.
+- Allan Gray Australian Equity now uses the exact EQT Class A historical-price feed (`ETL0060`) plus Allan Gray Class A fact-sheet distributions, with the older `Allan Gray Australia Equity Fund` name retained as an alias instead of a second live row.
+
 ### APIR and Morningstar investigation
 
 - APIR remains useful as a stable identifier layer, but the public material points to an API-keyed ADS service rather than a plug-and-play free historical price endpoint. See [APIR ADS API docs](https://www.apir.com.au/documentations/adsapiv2) and [How APIR Codes can be used](https://support.apir.com.au/hc/en-us/articles/14019438886543-How-can-APIR-Codes-be-used).
@@ -81,15 +112,25 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Selector High Conviction Equity Fund
 - Hyperion Australian Growth Companies Fund
 - Solaris Core Australian Equity Fund
-- Allan Gray Australia Equity Fund
+- Allan Gray Australian Equity
+- Wavestone Australian Share Fund
+- DNR High Conviction
+- Investors Mutual Australian Share Fund
+- Perpetual Concentrated Equity Fund
+- Forager Australian Value
+- Katana Australian Equity Fund
+- Vanguard Australian Shares Index
+- RQI Australian Value (formerly Realindex)
+- First Sentier FSI Geared Australian Share Fund
+- Dimensional Australian Value
+- Dimensional Aust Core Equity
+- Lazard Select Australian Equity
+- Lazard Australian Equity (Benchmark Unconstrained)
 
 ## Disabled Placeholders
 
-- Regal Australian Long Short Equity Fund
-- L1 Capital Catalyst Fund
-- Northcape Core
-- DNR High Conviction
-- Auscap High Conviction
+- Legacy placeholders carried forward from earlier source work: Regal Australian Long Short Equity Fund, L1 Capital Catalyst Fund, Northcape Core, and Auscap High Conviction.
+- Firetrail competitor-sheet placeholders awaiting durable public sources: Schroder Australian Equity Fund, Chester Opportunities Fund, AuscapAM Auscap Ex-20 Australian Equities Fund, Martin Currie Australia Value Equity, AB Concentrated Australian Equities, Macquarie Australian Shares, and Paradice Australian Equities.
 
 ## Verification Baseline
 
@@ -105,3 +146,8 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
   - `py main.py --no-cache --fund "Hyperion"`
   - `py main.py --no-cache --fund "Solaris"`
   - `py main.py --no-cache --fund "Allan Gray"`
+  - `py main.py --no-cache --fund "Vanguard Australian Shares Index"`
+  - `py main.py --no-cache --fund "RQI Australian Value"`
+  - `py main.py --no-cache --fund "First Sentier"`
+  - `py main.py --no-cache --fund "Lazard Select"`
+  - `py main.py --no-cache --fund "Lazard Australian Equity"`

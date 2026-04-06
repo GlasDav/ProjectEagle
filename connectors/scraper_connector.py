@@ -18,6 +18,7 @@ from .base import BaseConnector, ConnectorValidationError
 
 LOGGER = logging.getLogger(__name__)
 SCRAPER_REGISTRY: dict[str, Callable[..., pd.DataFrame]] = {}
+_ALLAN_GRAY_FACT_SHEET_INDEX_CACHE: dict[str, str] = {}
 
 
 def register_scraper(manager_id: str) -> Callable[[Callable[..., pd.DataFrame]], Callable[..., pd.DataFrame]]:
@@ -464,6 +465,457 @@ def _build_pendal_history_url(
     return f"https://pendalgroup.com/history-2?{query}"
 
 
+def _fetch_iml_export_csv(
+    session: requests.Session,
+    portfolio_code: str,
+    action: str,
+    ajax_url: str = "https://iml.com.au/wp-admin/admin-ajax.php",
+) -> str:
+    response = _post_with_retry(
+        session,
+        ajax_url,
+        timeout=20,
+        data={"portfolio": portfolio_code, "action": action},
+    )
+    payload = response.json()
+    file_url = payload.get("fileUrl")
+    if payload.get("error") or not file_url:
+        raise ConnectorValidationError(f"IML export request failed for portfolio '{portfolio_code}'.")
+
+    file_response = _get_with_retry(session, str(file_url), timeout=20)
+    return file_response.content.decode("utf-8", errors="replace")
+
+
+def _parse_iml_distribution_period(value: object) -> pd.Timestamp | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    parsed = pd.to_datetime(text, format="%Y %B", errors="coerce")
+    if pd.isna(parsed):
+        parsed = pd.to_datetime(text, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return (parsed + pd.offsets.MonthEnd(0)).normalize()
+
+
+def _parse_iml_unit_price_history(csv_text: str, price_field: str) -> pd.DataFrame:
+    frame = pd.read_csv(StringIO(csv_text))
+    if "Date" not in frame.columns or price_field not in frame.columns:
+        raise ConnectorValidationError("IML unit price export is missing required columns.")
+
+    return pd.DataFrame(
+        {
+            "date": pd.to_datetime(frame["Date"], format="%d/%m/%Y", errors="coerce"),
+            "nav": _to_float(frame[price_field]),
+        }
+    ).dropna(subset=["date", "nav"])
+
+
+def _parse_iml_distribution_history(csv_text: str) -> pd.DataFrame:
+    frame = pd.read_csv(StringIO(csv_text))
+    required_columns = {"Period ending", "Amount (cpu)"}
+    if not required_columns.issubset(frame.columns):
+        raise ConnectorValidationError("IML distribution export is missing required columns.")
+
+    distributions = pd.DataFrame(
+        {
+            "date": frame["Period ending"].map(_parse_iml_distribution_period),
+            "distribution": _to_float(frame["Amount (cpu)"]) / 100.0,
+        }
+    ).dropna(subset=["date", "distribution"])
+    return distributions[distributions["distribution"] != 0.0]
+
+
+def _parse_dnr_unit_price_history_frame(
+    history_frame: pd.DataFrame,
+    price_field: str,
+) -> pd.DataFrame:
+    if "Date" not in history_frame.columns or price_field not in history_frame.columns:
+        raise ConnectorValidationError("DNR unit price history is missing required columns.")
+
+    return pd.DataFrame(
+        {
+            "date": pd.to_datetime(history_frame["Date"], dayfirst=True, errors="coerce"),
+            "nav": _to_float(history_frame[price_field]),
+        }
+    ).dropna(subset=["date", "nav"])
+
+
+def _parse_dnr_distribution_history_table(table: pd.DataFrame) -> pd.DataFrame:
+    if table.empty:
+        return pd.DataFrame(columns=["date", "distribution"])
+
+    blocks: list[dict[str, list[object]]] = []
+    current_block: dict[str, list[object]] = {}
+
+    for row in table.itertuples(index=False):
+        label = str(row[0]).strip()
+        values = [value for value in row[1:] if pd.notna(value) and str(value).strip()]
+        if not label:
+            continue
+        if label.startswith("Financial Year"):
+            if current_block:
+                blocks.append(current_block)
+            current_block = {}
+            continue
+        current_block[label] = values
+
+    if current_block:
+        blocks.append(current_block)
+
+    rows: list[dict[str, object]] = []
+    for block in blocks:
+        period_end_dates = block.get("Period end date", [])
+        cash_distributions = block.get("Cash distribution amount (CPU)", [])
+        for period_end, cpu in zip(period_end_dates, cash_distributions):
+            date = pd.to_datetime(period_end, dayfirst=True, errors="coerce")
+            amount = pd.to_numeric(cpu, errors="coerce")
+            if pd.isna(date) or pd.isna(amount) or float(amount) == 0.0:
+                continue
+            rows.append({"date": date, "distribution": float(amount) / 100.0})
+
+    return pd.DataFrame(rows)
+
+
+def _build_first_sentier_history_file_path(fund_query: str, audience: str = "adviser") -> str:
+    normalized_query = str(fund_query).replace("-", "_")
+    return f"cfsgam/historical-price/AU/en/{audience}/{normalized_query}.json"
+
+
+def _parse_first_sentier_history_csv(csv_text: str, price_field: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    lines = [line for line in csv_text.splitlines() if line.strip()]
+    if len(lines) < 2:
+        raise ConnectorValidationError("First Sentier history export did not contain enough rows.")
+
+    frame = pd.read_csv(StringIO("\n".join(lines[1:])))
+    required_columns = {"DATE", price_field, "DISTRIBUTION"}
+    if not required_columns.issubset(frame.columns):
+        raise ConnectorValidationError("First Sentier history export is missing required columns.")
+
+    prices = pd.DataFrame(
+        {
+            "date": pd.to_datetime(frame["DATE"], format="%d %b %Y", errors="coerce"),
+            "nav": _to_float(frame[price_field]),
+        }
+    ).dropna(subset=["date", "nav"])
+
+    distributions = pd.DataFrame(
+        {
+            "date": pd.to_datetime(frame["DATE"], format="%d %b %Y", errors="coerce"),
+            "distribution": _to_float(frame["DISTRIBUTION"]) / 100.0,
+        }
+    ).dropna(subset=["date", "distribution"])
+    distributions = distributions[distributions["distribution"] != 0.0]
+    return prices, distributions
+
+
+def _parse_vanguard_price_history(payload: dict) -> pd.DataFrame:
+    data = payload.get("data") or []
+    if not data:
+        raise ConnectorValidationError("Vanguard price payload was empty.")
+
+    nav_prices = data[0].get("navPrices") or []
+    if not nav_prices:
+        raise ConnectorValidationError("Vanguard price payload did not include navPrices.")
+
+    frame = pd.DataFrame(nav_prices)
+    nav_only = frame[frame.get("measureTypeCode").fillna("").eq("NAV")]
+    return pd.DataFrame(
+        {
+            "date": pd.to_datetime(nav_only["asOfDate"], errors="coerce"),
+            "nav": pd.to_numeric(nav_only["price"], errors="coerce"),
+        }
+    ).dropna(subset=["date", "nav"])
+
+
+def _parse_vanguard_distribution_history(payload: dict) -> pd.DataFrame:
+    items = ((payload.get("data") or {}).get("items")) or []
+    rows: list[dict[str, object]] = []
+    for item in items:
+        ex_date = item.get("exDividendDate") or item.get("recordDate")
+        if not ex_date:
+            continue
+        distribution = sum(
+            float(detail.get("distributionAmount") or 0.0)
+            for detail in item.get("taxDetails") or []
+            if detail.get("distributionLevelCode") == "ACTL"
+        )
+        if distribution == 0.0:
+            continue
+        rows.append({"date": pd.to_datetime(ex_date, errors="coerce"), "distribution": distribution})
+
+    return pd.DataFrame(rows).dropna(subset=["date", "distribution"])
+
+
+def _parse_lazard_historical_nav(
+    payload: list[dict[str, object]],
+    share_class_id: str,
+    price_field: str,
+) -> pd.DataFrame:
+    if not payload:
+        raise ConnectorValidationError("Lazard API payload was empty.")
+
+    product = payload[0]
+    share_class = next(
+        (item for item in product.get("shareClasses", []) if str(item.get("id")) == str(share_class_id)),
+        None,
+    )
+    if share_class is None:
+        raise ConnectorValidationError(f"Lazard API payload did not contain share class '{share_class_id}'.")
+
+    historical_nav = ((share_class.get("data") or {}).get("nav") or {}).get("historicalNav") or []
+    if not historical_nav:
+        raise ConnectorValidationError("Lazard API payload did not include historical NAV rows.")
+
+    frame = pd.DataFrame(historical_nav)
+    if "navAsOfDate" not in frame.columns or price_field not in frame.columns:
+        raise ConnectorValidationError("Lazard historical NAV rows are missing required columns.")
+
+    return pd.DataFrame(
+        {
+            "date": pd.to_datetime(frame["navAsOfDate"], errors="coerce"),
+            "nav": pd.to_numeric(frame[price_field], errors="coerce"),
+        }
+    ).dropna(subset=["date", "nav"])
+
+
+def _parse_lazard_share_class_order(pdf_text: str) -> list[str]:
+    annual_matches = re.findall(r"\b([IWS] Class)\b", pdf_text)
+    annual_order: list[str] = []
+    for match in annual_matches:
+        if match not in annual_order:
+            annual_order.append(match)
+
+    if annual_order:
+        return annual_order
+
+    legacy_matches = re.findall(r"\(([IWS] Class)\)", pdf_text)
+    legacy_order: list[str] = []
+    for match in legacy_matches:
+        if match not in legacy_order:
+            legacy_order.append(match)
+    return legacy_order
+
+
+def _parse_lazard_annual_distribution_pdf_text(pdf_text: str, share_class_label: str) -> pd.DataFrame:
+    share_classes = _parse_lazard_share_class_order(pdf_text)
+    if share_class_label not in share_classes:
+        raise ConnectorValidationError(f"Lazard distribution PDF did not contain share class '{share_class_label}'.")
+
+    row_match = re.search(
+        r"Cash Distribution\s+(.*?)(?:MIT fund payment amount|The abovenamed fund|Lazard Asset Management Pacific Co\.)",
+        pdf_text,
+        flags=re.S,
+    )
+    if row_match is None:
+        raise ConnectorValidationError("Lazard annual distribution PDF did not contain a cash distribution row.")
+
+    tokens = re.findall(r"TBA|-|[0-9]+\.[0-9]+", row_match.group(1))
+    if len(tokens) % len(share_classes) != 0:
+        raise ConnectorValidationError("Lazard annual distribution PDF cash distribution columns were misaligned.")
+
+    all_dates = re.findall(r"\b\d{2} [A-Za-z]{3} \d{2}\b", pdf_text)
+    unique_dates = list(dict.fromkeys(all_dates))
+    block_size = len(tokens) // len(share_classes)
+    if len(unique_dates) < block_size:
+        raise ConnectorValidationError("Lazard annual distribution PDF cash distribution row was truncated.")
+
+    start = share_classes.index(share_class_label) * block_size
+    selected_dates = unique_dates[:block_size]
+    selected_tokens = tokens[start : start + block_size]
+
+    rows: list[dict[str, object]] = []
+    for date_text, token in zip(selected_dates, selected_tokens):
+        if token in {"-", "TBA"}:
+            continue
+        rows.append(
+            {
+                "date": pd.to_datetime(date_text, format="%d %b %y", errors="coerce"),
+                "distribution": float(token) / 100.0,
+            }
+        )
+
+    return pd.DataFrame(rows).dropna(subset=["date", "distribution"])
+
+
+def _parse_lazard_legacy_distribution_pdf_text(pdf_text: str, share_class_label: str) -> pd.DataFrame:
+    share_classes = _parse_lazard_share_class_order(pdf_text)
+    if share_class_label not in share_classes:
+        raise ConnectorValidationError(f"Lazard legacy distribution PDF did not contain share class '{share_class_label}'.")
+
+    row_pattern = re.compile(
+        r"(\d{2}-[A-Za-z]{3}-\d{2})\s+((?:-|[0-9]+\.[0-9]+)(?:\s+(?:-|[0-9]+\.[0-9]+)){8})"
+    )
+    rows: list[dict[str, object]] = []
+    net_cash_offset = share_classes.index(share_class_label) * 3 + 2
+
+    for date_text, values_text in row_pattern.findall(pdf_text):
+        tokens = re.findall(r"-|[0-9]+\.[0-9]+", values_text)
+        if len(tokens) <= net_cash_offset:
+            continue
+        token = tokens[net_cash_offset]
+        if token == "-":
+            continue
+        rows.append(
+            {
+                "date": pd.to_datetime(date_text, format="%d-%b-%y", errors="coerce"),
+                "distribution": float(token) / 100.0,
+            }
+        )
+
+    if not rows:
+        raise ConnectorValidationError("Lazard legacy distribution PDF did not contain usable distribution rows.")
+    return pd.DataFrame(rows).dropna(subset=["date", "distribution"])
+
+
+def _parse_lazard_distribution_pdf_text(pdf_text: str, share_class_label: str) -> pd.DataFrame:
+    if "Cash Distribution" in pdf_text:
+        return _parse_lazard_annual_distribution_pdf_text(pdf_text, share_class_label)
+    if "Net Cash" in pdf_text:
+        return _parse_lazard_legacy_distribution_pdf_text(pdf_text, share_class_label)
+    raise ConnectorValidationError("Unrecognized Lazard distribution PDF layout.")
+
+
+def _build_forager_price_and_distribution_frames(
+    history_frame: pd.DataFrame,
+    price_field: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    required_columns = {"Date", price_field}
+    if not required_columns.issubset(history_frame.columns):
+        raise ConnectorValidationError("Forager price history is missing required columns.")
+
+    frame = history_frame.copy()
+    frame["date"] = pd.to_datetime(frame["Date"], errors="coerce")
+    frame["nav"] = _to_float(frame[price_field])
+    explicit_distribution = pd.to_numeric(frame.get("Distribution"), errors="coerce")
+    fallback_distribution = pd.Series(index=frame.index, dtype="float64")
+    if price_field != "Redemption Price" and "Redemption Price" in frame.columns:
+        redemption_values = _to_float(frame["Redemption Price"])
+        fallback_mask = (
+            explicit_distribution.isna()
+            & redemption_values.notna()
+            & frame["nav"].notna()
+            & (redemption_values < 0.5)
+            & (frame["nav"] > 0.5)
+        )
+        fallback_distribution = redemption_values.where(fallback_mask)
+
+    frame["distribution"] = explicit_distribution.fillna(fallback_distribution)
+    frame = frame.dropna(subset=["date", "nav"])
+
+    price_rows: list[dict[str, object]] = []
+    distribution_rows: list[dict[str, object]] = []
+    for date, group in frame.groupby("date", sort=True):
+        distribution_group = group[group["distribution"].fillna(0.0) != 0.0]
+        if not distribution_group.empty:
+            ex_row = distribution_group.iloc[-1]
+            price_rows.append({"date": date, "nav": ex_row["nav"]})
+            distribution_rows.append({"date": date, "distribution": float(ex_row["distribution"])})
+            continue
+
+        latest_row = group.iloc[-1]
+        price_rows.append({"date": date, "nav": latest_row["nav"]})
+
+    return pd.DataFrame(price_rows), pd.DataFrame(distribution_rows)
+
+
+def _parse_katana_daily_price(page_html: str) -> pd.DataFrame:
+    match = re.search(r"Daily Price as at (\d{2}/\d{2}/\d{4}):\s*\$([0-9]+\.[0-9]+)", page_html)
+    if not match:
+        return pd.DataFrame(columns=["date", "nav"])
+
+    return pd.DataFrame(
+        {
+            "date": [pd.to_datetime(match.group(1), format="%d/%m/%Y", errors="coerce")],
+            "nav": [float(match.group(2))],
+        }
+    ).dropna(subset=["date", "nav"])
+
+
+def _parse_katana_month_label(year: int, label: str) -> tuple[pd.Timestamp, bool]:
+    normalized = " ".join(str(label).split())
+    is_post = normalized.casefold().endswith(" post")
+    month_token = re.sub(r"\s+(Pre|Post)$", "", normalized, flags=re.I)
+    month = pd.Timestamp(f"01 {month_token} {year}").month
+    base_date = pd.Timestamp(year=year, month=month, day=1) + pd.offsets.MonthEnd(0)
+    if is_post:
+        base_date += pd.Timedelta(days=1)
+    return base_date, is_post
+
+
+def _parse_katana_monthly_prices(page_html: str) -> pd.DataFrame:
+    soup = BeautifulSoup(page_html, "html.parser")
+    monthly_anchor = soup.find(id="monthly-unit-price")
+    annual_anchor = soup.find(id="annual-distribution")
+    if monthly_anchor is None:
+        raise ConnectorValidationError("Katana monthly unit price section was not found.")
+
+    rows: list[dict[str, object]] = []
+    for node in monthly_anchor.find_all_next():
+        if node is annual_anchor:
+            break
+        if node.name != "div":
+            continue
+
+        classes = set(node.get("class") or [])
+        if not {"col-md-2", "col-12"}.issubset(classes):
+            continue
+
+        year_link = node.find("a", class_="accord-title")
+        values = node.find("ul")
+        if year_link is None or values is None:
+            continue
+
+        year_match = re.search(r"\b(\d{4})\b", year_link.get_text(" ", strip=True))
+        if not year_match:
+            continue
+        year = int(year_match.group(1))
+
+        for item in values.find_all("li"):
+            text = " ".join(item.get_text(" ", strip=True).split())
+            match = re.match(r"([A-Za-z]+(?:\s+(?:Pre|Post))?)\s+\$([0-9]+\.[0-9]+)", text)
+            if not match:
+                continue
+            date, _ = _parse_katana_month_label(year, match.group(1))
+            rows.append({"date": date, "nav": float(match.group(2))})
+
+    if not rows:
+        raise ConnectorValidationError("Katana monthly unit price rows could not be parsed.")
+    return pd.DataFrame(rows)
+
+
+def _parse_katana_annual_distributions(page_html: str) -> pd.DataFrame:
+    soup = BeautifulSoup(page_html, "html.parser")
+    annual_anchor = soup.find(id="annual-distribution")
+    if annual_anchor is None:
+        raise ConnectorValidationError("Katana annual distribution section was not found.")
+
+    annual_row = annual_anchor.find_parent("div", class_="row")
+    if annual_row is None:
+        annual_row = annual_anchor.find_next("div", class_="row")
+    if annual_row is None:
+        raise ConnectorValidationError("Katana annual distribution section was malformed.")
+
+    rows: list[dict[str, object]] = []
+    for item in annual_row.find_all("li"):
+        text = " ".join(item.get_text(" ", strip=True).split())
+        match = re.match(r"([A-Za-z]+)\s+(\d{4})\s+([0-9]+\.[0-9]+)\s+CPU", text, flags=re.I)
+        if not match:
+            continue
+
+        month_name, year_text, cpu_text = match.groups()
+        date = pd.Timestamp(f"01 {month_name} {year_text}") + pd.offsets.MonthEnd(0)
+        rows.append({"date": date, "distribution": float(cpu_text) / 100.0})
+
+    if not rows:
+        raise ConnectorValidationError("Katana annual distribution rows could not be parsed.")
+    return pd.DataFrame(rows)
+
+
 def _parse_bennelong_history_sheet(sheet_text: str, price_field: str) -> pd.DataFrame:
     if not sheet_text.strip():
         return pd.DataFrame(columns=["date", "nav", "distribution"])
@@ -713,10 +1165,14 @@ def _build_allan_gray_fact_sheet_candidates(page_html: str, share_class: str) ->
 
 def _fetch_allan_gray_fact_sheet_text(fact_sheet_index_url: str, share_class: str) -> str:
     scraper = _create_cloudscraper_session()
-    page_response = scraper.get(fact_sheet_index_url, timeout=20)
-    page_response.raise_for_status()
+    cached_page_html = _ALLAN_GRAY_FACT_SHEET_INDEX_CACHE.get(fact_sheet_index_url)
+    if cached_page_html is None:
+        page_response = scraper.get(fact_sheet_index_url, timeout=20)
+        page_response.raise_for_status()
+        cached_page_html = page_response.text
+        _ALLAN_GRAY_FACT_SHEET_INDEX_CACHE[fact_sheet_index_url] = cached_page_html
 
-    for candidate_url in _build_allan_gray_fact_sheet_candidates(page_response.text, share_class):
+    for candidate_url in _build_allan_gray_fact_sheet_candidates(cached_page_html, share_class):
         try:
             response = scraper.get(candidate_url, timeout=30)
             response.raise_for_status()
@@ -1198,6 +1654,181 @@ def scrape_ausbil_fe_prices(
     return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
 
 
+@register_scraper("iml_ajax_exports")
+def scrape_iml_ajax_exports(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    portfolio_code = fund_config.get("portfolio_code")
+    if not portfolio_code:
+        raise ConnectorValidationError("iml_ajax_exports scraper requires 'portfolio_code'.")
+
+    ajax_url = fund_config.get("ajax_url", "https://iml.com.au/wp-admin/admin-ajax.php")
+    price_csv = _fetch_iml_export_csv(session, str(portfolio_code), "ajaxHandleAllFundsUnitPriceTableDownload", ajax_url=ajax_url)
+    distribution_csv = _fetch_iml_export_csv(
+        session,
+        str(portfolio_code),
+        "ajaxHandleAllFundsDistributionDownload",
+        ajax_url=ajax_url,
+    )
+
+    prices = _parse_iml_unit_price_history(price_csv, fund_config.get("price_field", "Exit"))
+    distributions = _parse_iml_distribution_history(distribution_csv)
+    return _merge_prices_and_distributions(
+        prices,
+        distributions,
+        start_date,
+        end_date,
+        distribution_timing=fund_config.get("distribution_timing", "next_price_date"),
+    )
+
+
+@register_scraper("first_sentier_history_csv")
+def scrape_first_sentier_history_csv(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    fund_query = fund_config.get("fund_query")
+    if not fund_query:
+        raise ConnectorValidationError("first_sentier_history_csv scraper requires 'fund_query'.")
+
+    audience = str(fund_config.get("audience", "adviser"))
+    history_file_path = fund_config.get("history_file_path") or _build_first_sentier_history_file_path(str(fund_query), audience)
+    history_url = _build_url_with_query(
+        "https://www.firstsentierinvestors.com.au/bin/cfsgam/getHistoricalPricingData",
+        type="downloadPrice",
+        filePath=history_file_path,
+    )
+    history_response = _get_with_retry(session, history_url, timeout=20)
+    prices, distributions = _parse_first_sentier_history_csv(
+        history_response.text,
+        fund_config.get("price_field", "EXIT PRICE (AUD)"),
+    )
+    return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
+
+
+@register_scraper("forager_google_sheet")
+def scrape_forager_google_sheet(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    workbook_url = fund_config.get("unit_prices_url") or url
+    if not workbook_url:
+        raise ConnectorValidationError("forager_google_sheet scraper requires 'unit_prices_url'.")
+
+    workbook_response = _get_with_retry(session, workbook_url, timeout=20)
+    workbook = pd.ExcelFile(io.BytesIO(workbook_response.content))
+    sheet_name = fund_config.get("sheet_name") or workbook.sheet_names[0]
+    history = workbook.parse(sheet_name)
+
+    prices, distributions = _build_forager_price_and_distribution_frames(
+        history,
+        fund_config.get("price_field", "Redemption Price"),
+    )
+    return _merge_prices_and_distributions(
+        prices,
+        distributions,
+        start_date,
+        end_date,
+        distribution_timing=fund_config.get("distribution_timing", "same_date"),
+    )
+
+
+@register_scraper("vanguard_personal_api")
+def scrape_vanguard_personal_api(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    port_id = fund_config.get("port_id")
+    if not port_id:
+        raise ConnectorValidationError("vanguard_personal_api scraper requires 'port_id'.")
+
+    base_url = str(fund_config.get("api_base_url", "https://www.vanguard.com.au/personal/api")).rstrip("/")
+    prices_response = _get_with_retry(session, f"{base_url}/products/personal/fund/{port_id}/prices", timeout=20)
+    distributions_response = _get_with_retry(
+        session,
+        f"{base_url}/data/products/product-distribution/{port_id}",
+        timeout=20,
+    )
+
+    prices = _parse_vanguard_price_history(prices_response.json())
+    distributions = _parse_vanguard_distribution_history(distributions_response.json())
+    return _merge_prices_and_distributions(
+        prices,
+        distributions,
+        start_date,
+        end_date,
+        distribution_timing=fund_config.get("distribution_timing", "same_date"),
+    )
+
+
+@register_scraper("lazard_product_api")
+def scrape_lazard_product_api(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    product_id = fund_config.get("product_id")
+    share_class_id = fund_config.get("share_class_id")
+    share_class_label = fund_config.get("share_class_label")
+    if not product_id or not share_class_id or not share_class_label:
+        raise ConnectorValidationError(
+            "lazard_product_api scraper requires 'product_id', 'share_class_id', and 'share_class_label'."
+        )
+
+    api_url = _build_url_with_query(
+        str(fund_config.get("api_url", "https://lazardassetmanagement.com/api/products")),
+        id=str(product_id),
+        type="Fund",
+    )
+    api_response = _get_with_retry(session, api_url, timeout=20)
+    prices = _parse_lazard_historical_nav(
+        api_response.json(),
+        str(share_class_id),
+        str(fund_config.get("price_field", "withdrawalPrice")),
+    )
+
+    pdf_urls = fund_config.get("distribution_pdf_urls") or []
+    if not pdf_urls:
+        raise ConnectorValidationError("lazard_product_api scraper requires 'distribution_pdf_urls'.")
+
+    distribution_frames: list[pd.DataFrame] = []
+    for pdf_url in pdf_urls:
+        pdf_response = _get_with_retry(session, str(pdf_url), timeout=30)
+        pdf_text = _extract_pdf_text(pdf_response.content)
+        distribution_frames.append(_parse_lazard_distribution_pdf_text(pdf_text, str(share_class_label)))
+
+    distributions = pd.concat(distribution_frames, ignore_index=True) if distribution_frames else pd.DataFrame()
+    if not distributions.empty:
+        distributions = (
+            distributions.sort_values("date")
+            .drop_duplicates(subset=["date"], keep="last")
+            .reset_index(drop=True)
+        )
+
+    return _merge_prices_and_distributions(
+        prices,
+        distributions,
+        start_date,
+        end_date,
+        distribution_timing=fund_config.get("distribution_timing", "next_price_date"),
+    )
+
+
 @register_scraper("perpetual_family")
 def scrape_perpetual_family(
     url: str,
@@ -1234,6 +1865,92 @@ def scrape_perpetual_family(
     distributions = _align_distributions_to_next_price_date(prices, distributions)
 
     return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
+
+
+@register_scraper("dnr_html_xlsx")
+def scrape_dnr_html_xlsx(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    if not url:
+        raise ConnectorValidationError("dnr_html_xlsx scraper requires 'url'.")
+
+    scraper = _create_cloudscraper_session()
+    page_response = scraper.get(url, timeout=30)
+    page_response.raise_for_status()
+    tables = _read_html_tables(page_response.text)
+
+    distribution_table = next(
+        (
+            table
+            for table in tables
+            if not table.empty and str(table.columns[0]).strip().casefold() == "financial year(s)"
+        ),
+        None,
+    )
+    if distribution_table is None:
+        raise ConnectorValidationError("DNR distribution history table was not found on the source page.")
+
+    history_xlsx_url = fund_config.get("history_xlsx_url")
+    if not history_xlsx_url:
+        soup = BeautifulSoup(page_response.text, "html.parser")
+        history_link = next(
+            (
+                link.get("href")
+                for link in soup.find_all("a", href=True)
+                if "historical unit prices" in link.get_text(" ", strip=True).casefold()
+            ),
+            None,
+        )
+        if not history_link:
+            raise ConnectorValidationError("DNR historical unit price workbook link was not found on the source page.")
+        history_xlsx_url = history_link
+
+    history_response = scraper.get(str(history_xlsx_url), timeout=30)
+    history_response.raise_for_status()
+    history_frame = pd.read_excel(io.BytesIO(history_response.content))
+
+    prices = _parse_dnr_unit_price_history_frame(history_frame, fund_config.get("price_field", "Withdrawal Price"))
+    distributions = _parse_dnr_distribution_history_table(distribution_table)
+    return _merge_prices_and_distributions(
+        prices,
+        distributions,
+        start_date,
+        end_date,
+        distribution_timing=fund_config.get("distribution_timing", "next_price_date"),
+    )
+
+
+@register_scraper("katana_html")
+def scrape_katana_html(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    if not url:
+        raise ConnectorValidationError("katana_html scraper requires 'url'.")
+
+    response = _get_with_retry(session, url, timeout=20)
+    page_html = response.text
+
+    prices = _parse_katana_monthly_prices(page_html)
+    current_price = _parse_katana_daily_price(page_html)
+    if not current_price.empty:
+        prices = pd.concat([prices, current_price], ignore_index=True)
+
+    distributions = _parse_katana_annual_distributions(page_html)
+    return _merge_prices_and_distributions(
+        prices,
+        distributions,
+        start_date,
+        end_date,
+        distribution_timing=fund_config.get("distribution_timing", "next_price_date"),
+    )
 
 
 @register_scraper("allan_gray_eqt")

@@ -8,9 +8,21 @@ from connectors.scraper_connector import (
     _build_allan_gray_fact_sheet_candidates,
     _build_airlie_price_and_distribution_frames,
     _build_chester_price_and_distribution_frames,
+    _build_first_sentier_history_file_path,
+    _build_forager_price_and_distribution_frames,
+    _parse_lazard_annual_distribution_pdf_text,
+    _parse_dnr_distribution_history_table,
+    _parse_lazard_historical_nav,
+    _parse_lazard_legacy_distribution_pdf_text,
     _build_solaris_price_and_distribution_frames,
     _build_smallco_price_and_distribution_frames,
     _extract_smallco_current_price,
+    _parse_first_sentier_history_csv,
+    _parse_iml_distribution_history,
+    _parse_iml_unit_price_history,
+    _parse_katana_annual_distributions,
+    _parse_katana_daily_price,
+    _parse_katana_monthly_prices,
     _merge_prices_and_distributions,
     _parse_allan_gray_fact_sheet_distributions,
     _parse_eqt_historical_prices_page,
@@ -19,6 +31,8 @@ from connectors.scraper_connector import (
     _parse_perpetual_distribution_table,
     _parse_report_csv,
     _parse_selector_unit_prices_frame,
+    _parse_vanguard_distribution_history,
+    _parse_vanguard_price_history,
 )
 
 
@@ -158,6 +172,193 @@ Date\tApplication\tRedemption\tDistribution CPU\tEx Dist. Redemption
         {"date": pd.Timestamp("2026-03-13"), "nav": 1.7579, "distribution": 0.0},
         {"date": pd.Timestamp("2025-12-31"), "nav": 1.9564, "distribution": pytest.approx(0.023357)},
         {"date": pd.Timestamp("2025-12-30"), "nav": 1.9540, "distribution": 0.0},
+    ]
+
+
+def test_parse_iml_unit_price_history_reads_exit_prices():
+    csv_text = """
+Date,Entry,Exit
+01/04/2026,2.6063,2.5933
+31/03/2026,2.5667,2.5539
+30/03/2026,2.5670,2.5542
+""".strip()
+
+    parsed = _parse_iml_unit_price_history(csv_text, "Exit")
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-04-01"), "nav": 2.5933},
+        {"date": pd.Timestamp("2026-03-31"), "nav": 2.5539},
+        {"date": pd.Timestamp("2026-03-30"), "nav": 2.5542},
+    ]
+
+
+def test_parse_iml_distribution_history_maps_period_end_to_month_end():
+    csv_text = """
+"Period ending","Amount (cpu)"
+"2025 December",5.5000
+"2025 June",23.8700
+"2002 November",0.0000
+""".strip()
+
+    parsed = _parse_iml_distribution_history(csv_text)
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-12-31"), "distribution": pytest.approx(0.055)},
+        {"date": pd.Timestamp("2025-06-30"), "distribution": pytest.approx(0.2387)},
+    ]
+
+
+def test_build_forager_price_and_distribution_frames_prefers_distribution_row():
+    raw = pd.DataFrame(
+        {
+            "Date": [
+                "2025-12-31",
+                "2025-12-31",
+                "2025-12-30",
+                "2024-06-30",
+                "2024-06-30",
+            ],
+            "Redemption Price": [2.1987, 2.2586, 2.1000, 1.5276, 1.5558],
+            "Distribution": [0.0600, None, None, 0.0300, None],
+        }
+    )
+
+    prices, distributions = _build_forager_price_and_distribution_frames(raw, "Redemption Price")
+
+    assert prices.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2024-06-30"), "nav": 1.5276},
+        {"date": pd.Timestamp("2025-12-30"), "nav": 2.1000},
+        {"date": pd.Timestamp("2025-12-31"), "nav": 2.1987},
+    ]
+    assert distributions.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2024-06-30"), "distribution": pytest.approx(0.03)},
+        {"date": pd.Timestamp("2025-12-31"), "distribution": pytest.approx(0.06)},
+    ]
+
+
+def test_build_forager_price_and_distribution_frames_supports_legacy_distribution_fallback():
+    raw = pd.DataFrame(
+        {
+            "Date": ["2023-06-28", "2023-06-29", "2023-06-30", "2023-07-03"],
+            "Mid Price": [1.19, 1.17, 1.21, 1.21],
+            "Redemption Price": [None, 0.03, None, None],
+            "Distribution": [None, None, None, None],
+        }
+    )
+
+    prices, distributions = _build_forager_price_and_distribution_frames(raw, "Mid Price")
+
+    assert prices.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2023-06-28"), "nav": 1.19},
+        {"date": pd.Timestamp("2023-06-29"), "nav": 1.17},
+        {"date": pd.Timestamp("2023-06-30"), "nav": 1.21},
+        {"date": pd.Timestamp("2023-07-03"), "nav": 1.21},
+    ]
+    assert distributions.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2023-06-29"), "distribution": pytest.approx(0.03)}
+    ]
+
+
+def test_build_first_sentier_history_file_path_normalizes_query():
+    assert _build_first_sentier_history_file_path("16-KIDS26-AU-EN-adviser") == (
+        "cfsgam/historical-price/AU/en/adviser/16_KIDS26_AU_EN_adviser.json"
+    )
+
+
+def test_parse_first_sentier_history_csv_reads_exit_prices_and_distributions():
+    csv_text = """
+"RQI Investors",
+"FUND","APIR","DATE","ENTRY PRICE (AUD)","UNIT PRICE (AUD)","EXIT PRICE (AUD)","DISTRIBUTION",
+"RQI Australian Value - Class A (CFSIL)","FSF0976AU","01 Apr 2026","1.1788","1.1776","1.1764","",
+"RQI Australian Value - Class A (CFSIL)","FSF0976AU","26 Mar 2026","1.1572","1.1560","1.1548","2.7800",
+"RQI Australian Value - Class A (CFSIL)","FSF0976AU","25 Mar 2026","1.1200","1.1190","1.1180","",
+""".strip()
+
+    prices, distributions = _parse_first_sentier_history_csv(csv_text, "EXIT PRICE (AUD)")
+
+    assert prices.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-04-01"), "nav": 1.1764},
+        {"date": pd.Timestamp("2026-03-26"), "nav": 1.1548},
+        {"date": pd.Timestamp("2026-03-25"), "nav": 1.1180},
+    ]
+    assert distributions.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-03-26"), "distribution": pytest.approx(0.0278)}
+    ]
+
+
+def test_parse_lazard_historical_nav_reads_selected_share_class_withdrawal_prices():
+    payload = [
+        {
+            "id": "183",
+            "shareClasses": [
+                {
+                    "id": "251",
+                    "data": {
+                        "nav": {
+                            "historicalNav": [
+                                {"navAsOfDate": "2026-04-01", "withdrawalPrice": 1.91},
+                            ]
+                        }
+                    },
+                },
+                {
+                    "id": "254",
+                    "data": {
+                        "nav": {
+                            "historicalNav": [
+                                {"navAsOfDate": "2026-04-01", "withdrawalPrice": 1.8133},
+                                {"navAsOfDate": "2026-03-31", "withdrawalPrice": 1.7943},
+                            ]
+                        }
+                    },
+                },
+            ],
+        }
+    ]
+
+    parsed = _parse_lazard_historical_nav(payload, "254", "withdrawalPrice")
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-04-01"), "nav": 1.8133},
+        {"date": pd.Timestamp("2026-03-31"), "nav": 1.7943},
+    ]
+
+
+def test_parse_lazard_annual_distribution_pdf_text_reads_selected_share_class_block():
+    pdf_text = """
+    Lazard Select Australian Equity Fund
+    Annual Fund Distributions and Fund Payment Information
+    for the year ended 30 June 2026
+    I Class W Class S Class
+    30 Sep 25 31 Dec 25 31 Mar 26 30 Jun 26 30 Sep 25 31 Dec 25 31 Mar 26 30 Jun 26 30 Sep 25 31 Dec 25 31 Mar 26 30 Jun 26
+    Cash Distribution 1.8726 1.2124 TBA TBA 1.7730 0.9922 TBA TBA 1.3643 0.8232 TBA TBA
+    MIT fund payment amount
+    """.strip()
+
+    parsed = _parse_lazard_annual_distribution_pdf_text(pdf_text, "W Class")
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-09-30"), "distribution": pytest.approx(0.01773)},
+        {"date": pd.Timestamp("2025-12-31"), "distribution": pytest.approx(0.009922)},
+    ]
+
+
+def test_parse_lazard_legacy_distribution_pdf_text_reads_net_cash_distribution_column():
+    pdf_text = """
+    Lazard Australian Equity Fund
+    (I Class)
+    (W Class)
+    (S Class)
+    Net Cash Distribution (cents per unit)
+    30-Jun-21 0.04 0.54 0.58 0.02 0.28 0.30 0.06 0.70 0.76
+    31-Mar-21 0.03 0.75 0.78 0.02 0.59 0.61 0.04 0.87 0.91
+    """.strip()
+
+    parsed = _parse_lazard_legacy_distribution_pdf_text(pdf_text, "W Class")
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2021-06-30"), "distribution": pytest.approx(0.003)},
+        {"date": pd.Timestamp("2021-03-31"), "distribution": pytest.approx(0.0061)},
     ]
 
 
@@ -321,6 +522,120 @@ def test_parse_hyperion_distribution_sheet_supports_date_row_layout():
     ]
 
 
+def test_parse_katana_monthly_prices_preserves_june_pre_and_post_rows():
+    html = """
+    <div id="monthly-unit-price"></div>
+    <div class="col-md-2 col-12">
+      <a class="accord-title" href="#">2025</a>
+      <div class="accord-body">
+        <ul>
+          <li>May $1.2590</li>
+          <li>Jun Pre $1.2854</li>
+          <li>Jun Post $1.1981</li>
+          <li>Jul $1.3019</li>
+        </ul>
+      </div>
+    </div>
+    <div class="col-md-2 col-12">
+      <a class="accord-title" href="#">2026</a>
+      <div class="accord-body">
+        <ul>
+          <li>Jan $1.4445</li>
+          <li>Mar $1.3080</li>
+        </ul>
+      </div>
+    </div>
+    <div id="annual-distribution"></div>
+    """.strip()
+
+    parsed = _parse_katana_monthly_prices(html)
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-05-31"), "nav": 1.2590},
+        {"date": pd.Timestamp("2025-06-30"), "nav": 1.2854},
+        {"date": pd.Timestamp("2025-07-01"), "nav": 1.1981},
+        {"date": pd.Timestamp("2025-07-31"), "nav": 1.3019},
+        {"date": pd.Timestamp("2026-01-31"), "nav": 1.4445},
+        {"date": pd.Timestamp("2026-03-31"), "nav": 1.3080},
+    ]
+
+
+def test_parse_katana_annual_distributions_reads_cpu_rows():
+    html = """
+    <div>
+      <div id="annual-distribution"></div>
+      <div class="row">
+        <ul>
+          <li>June 2025 8.7292 CPU (paid 15/07/2025)</li>
+          <li>June 2024 5.9090 CPU (paid 11/07/2024)</li>
+        </ul>
+      </div>
+    </div>
+    """.strip()
+
+    parsed = _parse_katana_annual_distributions(html)
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-06-30"), "distribution": pytest.approx(0.087292)},
+        {"date": pd.Timestamp("2024-06-30"), "distribution": pytest.approx(0.05909)},
+    ]
+
+
+def test_parse_katana_daily_price_reads_latest_posted_price():
+    html = "<strong>Daily Price as at 01/04/2026: $1.3512</strong>"
+
+    parsed = _parse_katana_daily_price(html)
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-04-01"), "nav": 1.3512}
+    ]
+
+
+def test_parse_dnr_distribution_history_table_reads_multiple_periods_per_year():
+    table = pd.DataFrame(
+        {
+            "Financial year(s)": [
+                "Financial Year 2026",
+                "APIR code: PIM0028AU",
+                "Period end date",
+                "Cash distribution amount (CPU)",
+                "Financial Year 2025",
+                "APIR code: PIM0028AU",
+                "Period end date",
+                "Cash distribution amount (CPU)",
+            ],
+            "Unnamed: 1": [
+                None,
+                None,
+                "31/12/2025",
+                2.3206,
+                None,
+                None,
+                "31/12/2024",
+                2.3480,
+            ],
+            "Unnamed: 2": [
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "30/06/2025",
+                1.4433,
+            ],
+        }
+    )
+
+    parsed = _parse_dnr_distribution_history_table(table)
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-12-31"), "distribution": pytest.approx(0.023206)},
+        {"date": pd.Timestamp("2024-12-31"), "distribution": pytest.approx(0.02348)},
+        {"date": pd.Timestamp("2025-06-30"), "distribution": pytest.approx(0.014433)},
+    ]
+
+
 def test_build_smallco_price_and_distribution_frames_uses_ex_rows():
     tables = [
         pd.DataFrame(
@@ -360,6 +675,56 @@ def test_extract_smallco_current_price_uses_page_header():
 
     assert parsed.to_dict(orient="records") == [
         {"date": pd.Timestamp("2026-03-25"), "nav": 1.5290}
+    ]
+
+
+def test_parse_vanguard_price_history_reads_nav_price_rows():
+    payload = {
+        "data": [
+            {
+                "navPrices": [
+                    {"measureTypeCode": "NAV", "asOfDate": "2026-04-02", "price": 2.9477},
+                    {"measureTypeCode": "BUY", "asOfDate": "2026-04-02", "price": 2.9500},
+                    {"measureTypeCode": "NAV", "asOfDate": "2026-04-01", "price": 2.9808},
+                ]
+            }
+        ]
+    }
+
+    parsed = _parse_vanguard_price_history(payload)
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-04-02"), "nav": 2.9477},
+        {"date": pd.Timestamp("2026-04-01"), "nav": 2.9808},
+    ]
+
+
+def test_parse_vanguard_distribution_history_sums_actual_tax_details():
+    payload = {
+        "data": {
+            "items": [
+                {
+                    "exDividendDate": "2026-04-01",
+                    "taxDetails": [
+                        {"distributionLevelCode": "ACTL", "distributionAmount": 0.1000},
+                        {"distributionLevelCode": "ACTL", "distributionAmount": 0.04507142},
+                        {"distributionLevelCode": "EST", "distributionAmount": 9.99},
+                    ],
+                },
+                {
+                    "recordDate": "2025-12-31",
+                    "taxDetails": [
+                        {"distributionLevelCode": "ACTL", "distributionAmount": 0.0},
+                    ],
+                },
+            ]
+        }
+    }
+
+    parsed = _parse_vanguard_distribution_history(payload)
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-04-01"), "distribution": pytest.approx(0.14507142)}
     ]
 
 

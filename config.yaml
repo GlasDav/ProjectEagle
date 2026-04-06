@@ -39,6 +39,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Firetrail High Conviction Fund"
+    aliases:
+      - "Firetrail Australian High Conviction Fund"
     source: scraper
     scraper_id: "firetrail_wpdatatable"
     url: "https://firetrail.com/funds/firetrail-australian-high-conviction-fund/"
@@ -59,6 +61,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Ausbil Active Equity"
+    aliases:
+      - "Ausbil Australian Active Equity"
     source: scraper
     scraper_id: "ausbil_fe_prices"
     fund_options_url: "https://digital.feprecisionplus.com/ausbil-fc-unitpricing/en-au/ausbil-fc-cr/DownloadTool/FundOptions"
@@ -73,6 +77,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Greencape High Conviction"
+    aliases:
+      - "Greencape High Conviction Fund"
     source: scraper
     scraper_id: "feprecision_downloadtool"
     fund_options_url: "https://digital.feprecisionplus.com/FidanteFunds/en-au/Fidante/DownloadTool/FundOptions"
@@ -96,6 +102,42 @@ funds:
     style: agnostic
     nav_type: ex_distribution
 
+  - name: "Wavestone Australian Share Fund"
+    apir_code: "HOW0020AU"
+    source: scraper
+    scraper_id: "feprecision_downloadtool"
+    fund_options_url: "https://digital.feprecisionplus.com/FidanteFunds/en-au/Fidante/DownloadTool/FundOptions"
+    download_tool_url: "https://digital.feprecisionplus.com/FidanteFunds/en-au/Fidante/DownloadTool"
+    grs_project_id: "95400108"
+    project_name: "fidantefunds"
+    citi_code: "L1L7"
+    price_component: "Bid"
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "DNR High Conviction"
+    aliases:
+      - "DNR High Conviction Australian Equities"
+    apir_code: "PIM0028AU"
+    source: scraper
+    scraper_id: "dnr_html_xlsx"
+    url: "https://dnrcapital.com.au/high-conviction-fund/"
+    history_xlsx_url: "https://dnrcapital.com.au/dnr-imports/DNRAustralianEquitiesHighConvictionFundPriceHistory.xlsx"
+    price_field: "Withdrawal Price"
+    distribution_timing: next_price_date
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Investors Mutual Australian Share Fund"
+    apir_code: "IML0002AU"
+    source: scraper
+    scraper_id: "iml_ajax_exports"
+    portfolio_code: "IMAS"
+    price_field: "Exit"
+    distribution_timing: next_price_date
+    style: value
+    nav_type: ex_distribution
+
   # Not in the default run yet because stable public historical NAV + distribution
   # endpoints have not been wired in. Keeping them here as disabled placeholders
   # means the app stays autonomous by default instead of depending on manual CSVs.
@@ -115,13 +157,8 @@ funds:
 
   - name: "Northcape Core"
     enabled: false
-    source: scraper
-    scraper_id: "example_manager"
-    url: ""
-    nav_type: ex_distribution
-
-  - name: "DNR High Conviction"
-    enabled: false
+    aliases:
+      - "Northcape Capital Core Australian Equities"
     source: scraper
     scraper_id: "example_manager"
     url: ""
@@ -136,6 +173,16 @@ funds:
     style: value
     nav_type: ex_distribution
 
+  - name: "Perpetual Concentrated Equity Fund"
+    apir_code: "PER0102AU"
+    source: scraper
+    scraper_id: "perpetual_family"
+    portfolio_id: "128"
+    fund_id: "2978"
+    price_field: "Exit Price"
+    style: value
+    nav_type: ex_distribution
+
   - name: "Chester High Conviction Fund"
     source: scraper
     scraper_id: "chester_google_sheet"
@@ -145,6 +192,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Bennelong Concentrated"
+    aliases:
+      - "Bennelong Concentrated Australian Equities"
     source: scraper
     scraper_id: "bennelong_sheet_file"
     sheet_file_id: "11"
@@ -187,6 +236,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Hyperion Australian Growth Companies Fund"
+    aliases:
+      - "Hyperion Australian Growth Companies"
     source: scraper
     scraper_id: "hyperion_price_csv"
     prices_url: "https://www.hyperion.com.au/app/uploads/HAGF-prices.csv"
@@ -206,11 +257,25 @@ funds:
     nav_type: ex_distribution
 
   - name: "Pendal Australian Focus Fund"
+    aliases:
+      - "Pendal Focus Australian Share Fund"
     source: scraper
     scraper_id: "pendal_history_csv"
     product_id: "219"
     price_field: "Exit Price"
     style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Forager Australian Value"
+    aliases:
+      - "Forager Australian Shares Fund"
+    apir_code: "FOR0001AU"
+    source: scraper
+    scraper_id: "forager_google_sheet"
+    unit_prices_url: "https://docs.google.com/spreadsheets/d/17qEVMrsruJb1q5o35tIBnzJ4x1OrePn1goeYh_zjReY/export?format=xlsx&gid=459884115"
+    sheet_name: "Historical - Australian Shares "
+    price_field: "Mid Price"
+    style: value
     nav_type: ex_distribution
 
   - name: "Solaris Core Australian Equity Fund"
@@ -223,15 +288,177 @@ funds:
     style: agnostic
     nav_type: ex_distribution
 
-  - name: "Allan Gray Australia Equity Fund"
+  - name: "Allan Gray Australian Equity"
+    aliases:
+      - "Allan Gray Australia Equity Fund"
+    apir_code: "ETL0060AU"
     source: scraper
     scraper_id: "allan_gray_eqt"
-    url: "https://www.eqt.com.au/Our-Services/Corporate/Fund-Services/Institutional-Funds/Historical-Prices?id=bb4ca93c-0a07-4946-b03e-6ffe3c99cd0b"
-    fund_id: "ETL0349"
+    url: "https://www.eqt.com.au/Our-Services/Corporate/Fund-Services/Institutional-Funds/Historical-Prices?id=ddf4a3b4-cc69-43ec-a2ac-6898add1fe61"
+    fund_id: "ETL0060"
     price_field: "sell"
     fact_sheet_index_url: "https://www.allangray.com.au/"
-    share_class: "B"
+    share_class: "A"
     stale_after_days: 35
     distribution_timing: next_price_date
     style: value
+    nav_type: ex_distribution
+
+  - name: "Katana Australian Equity Fund"
+    apir_code: "KAT0001AU"
+    source: scraper
+    scraper_id: "katana_html"
+    url: "https://katanaasset.com/katana-australian-equity-funds/"
+    distribution_timing: next_price_date
+    style: agnostic
+    nav_type: ex_distribution
+
+  # Present in the Firetrail competitor workbook, but autonomous public source
+  # wiring is not in place yet. Keep these disabled until price + distribution
+  # history is validated and a durable scraper is implemented.
+  - name: "Schroder Australian Equity Fund"
+    enabled: false
+    apir_code: "SCH0002AU"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "Vanguard Australian Shares Index"
+    apir_code: "VAN0002AU"
+    source: scraper
+    scraper_id: "vanguard_personal_api"
+    url: "https://www.vanguard.com.au/personal/invest-with-us/fund?portId=8100&tab=prices-and-distributions"
+    port_id: "8100"
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Chester Opportunities Fund"
+    enabled: false
+    apir_code: "OPS8316AU"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "Dimensional Australian Value"
+    apir_code: "DFA0101AU"
+    aliases:
+      - "Dimensional Australian Value Trust – Active ETF"
+    source: yfinance
+    ticker: "DAVA.AX"
+    style: value
+    nav_type: adjusted_close
+
+  - name: "AuscapAM Auscap Ex-20 Australian Equities Fund"
+    enabled: false
+    apir_code: "ACQ0001AU"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "RQI Australian Value (formerly Realindex)"
+    apir_code: "FSF0976AU"
+    source: scraper
+    scraper_id: "first_sentier_history_csv"
+    url: "https://www.firstsentierinvestors.com.au/au/en/adviser/our-funds/rqi-investors.html"
+    fund_query: "16-KIDS26-AU-EN-adviser"
+    price_field: "EXIT PRICE (AUD)"
+    style: value
+    nav_type: ex_distribution
+
+  - name: "Martin Currie Australia Value Equity"
+    enabled: false
+    apir_code: "FSF0933AU"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "Dimensional Aust Core Equity"
+    apir_code: "DFA0003AU"
+    aliases:
+      - "Dimensional Australian Core Equity Trust – Active ETF"
+    source: yfinance
+    ticker: "DACE.AX"
+    style: agnostic
+    nav_type: adjusted_close
+
+  - name: "Lazard Select Australian Equity"
+    apir_code: "LAZ0001AU"
+    source: scraper
+    scraper_id: "lazard_product_api"
+    url: "https://www.lazardassetmanagement.com/au/en_us/investment-solutions/how-to-invest/14/183"
+    product_id: "183"
+    share_class_id: "254"
+    share_class_label: "W Class"
+    price_field: "withdrawalPrice"
+    distribution_pdf_urls:
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/239326/283629.pdf"
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/239326/263354.pdf"
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/208062/231563.pdf"
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/203131/238637.pdf"
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/203119/203119.pdf"
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/11728/203575.pdf"
+    distribution_timing: next_price_date
+    style: value
+    nav_type: ex_distribution
+
+  - name: "Lazard Australian Equity (Benchmark Unconstrained)"
+    aliases:
+      - "Lazard Australian Equity Fund"
+    apir_code: "LAZ0004AU"
+    source: scraper
+    scraper_id: "lazard_product_api"
+    url: "https://www.lazardassetmanagement.com/au/en_us/investment-solutions/how-to-invest/14/182"
+    product_id: "182"
+    share_class_id: "253"
+    share_class_label: "W Class"
+    price_field: "withdrawalPrice"
+    distribution_pdf_urls:
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/269861/283632.pdf"
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/269861/275278.pdf"
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/208061/208061.pdf"
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/203130/238635.pdf"
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/203118/203118.pdf"
+      - "https://www.lazardassetmanagement.com/content/dam/lazard-asset-management/lmap-documents/11147/203570.pdf"
+    distribution_timing: next_price_date
+    style: value
+    nav_type: ex_distribution
+
+  - name: "First Sentier FSI Geared Australian Share Fund"
+    aliases:
+      - "First Sentier Geared Australian Share Fund Complex ETF"
+      - "First Sentier Geared Australian Share Fund Complex ETF (PCT) (ASX:LEVR)"
+    apir_code: "PIM7590AU"
+    source: scraper
+    scraper_id: "first_sentier_history_csv"
+    url: "https://www.firstsentierinvestors.com.au/au/en/adviser/our-funds/australian-equities/australian-equities-growth/geared-australian-share-fund.html"
+    fund_query: "11-FSIGRS_W-AU-EN-adviser"
+    price_field: "EXIT PRICE (AUD)"
+    style: growth
+    nav_type: ex_distribution
+
+  - name: "AB Concentrated Australian Equities"
+    enabled: false
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "Macquarie Australian Shares"
+    enabled: false
+    apir_code: "MAQ0277AU"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    nav_type: ex_distribution
+
+  - name: "Paradice Australian Equities"
+    enabled: false
+    apir_code: "ETL0353AU"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
     nav_type: ex_distribution
