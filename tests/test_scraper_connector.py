@@ -35,6 +35,8 @@ from connectors.scraper_connector import (
     _parse_perpetual_distribution_table,
     _parse_report_csv,
     _parse_selector_unit_prices_frame,
+    _find_selector_unit_prices_workbook_url,
+    _parse_allan_gray_fact_sheet_latest_price,
     _parse_vanguard_distribution_history,
     _parse_vanguard_price_history,
 )
@@ -418,6 +420,18 @@ def test_parse_selector_unit_prices_frame_reads_exit_price_and_distribution():
     ]
 
 
+def test_find_selector_unit_prices_workbook_url_reads_current_fund_page_link():
+    page_html = """
+    <a href="https://cdn.prod.website-files.com/current.xlsx">
+      Selector High Conviction Equity Fund Unit Prices Spreadsheet
+    </a>
+    """
+
+    workbook_url = _find_selector_unit_prices_workbook_url(page_html, "https://www.selectorfund.com.au/wholesale-fund")
+
+    assert workbook_url == "https://cdn.prod.website-files.com/current.xlsx"
+
+
 def test_parse_eqt_historical_prices_page_extracts_sell_prices():
     page_html = r"""
     <script>
@@ -446,6 +460,17 @@ def test_build_allan_gray_fact_sheet_candidates_transforms_latest_class_a_link()
     )
 
 
+def test_build_allan_gray_fact_sheet_candidates_prefers_fact_sheets_over_reports():
+    page_html = """
+    <a href="https://www.allangray.com.au/wp-content/uploads/AGA-Documents/Australia-and-New-Zealand/Research-House-Reports/AGA-Equity-Fund-Class-A/Lonsec-Report-2025-Allan-Gray-Australia-Equity-Fund-Oct-2025.pdf">Report</a>
+    <a href="https://www.allangray.com.au/wp-content/uploads/AGA-Documents/Australia-and-New-Zealand/Fact-Sheets/AGA-Equity-Fund-Class-A/Allan-Gray-Australia-Equity-Fund-Fact-Sheet-Class-A-March-2026.pdf">Fact Sheet</a>
+    """
+
+    candidates = _build_allan_gray_fact_sheet_candidates(page_html, "A")
+
+    assert "Fact-Sheet-Class-A-March-2026.pdf" in candidates[0]
+
+
 def test_parse_allan_gray_fact_sheet_distributions_reads_recent_annual_rows():
     pdf_text = """
 Allan Gray Australia Equity Fund (Class B)
@@ -466,6 +491,21 @@ Year Cents per unit Distribution return
         {"date": pd.Timestamp("2023-06-30"), "distribution": pytest.approx(0.161629)},
         {"date": pd.Timestamp("2022-06-30"), "distribution": pytest.approx(0.152742)},
         {"date": pd.Timestamp("2021-06-30"), "distribution": pytest.approx(0.058262)},
+    ]
+
+
+def test_parse_allan_gray_fact_sheet_latest_price_converts_nav_to_sell_price():
+    pdf_text = """
+Allan Gray Australia Equity Fund (Class A)
+FUND FACT SHEET 31 MARCH 2026
+Price (net asset value) AUD 1.7386
+Buy/sell spread +0.2 / -0.2%
+""".strip()
+
+    parsed = _parse_allan_gray_fact_sheet_latest_price(pdf_text, "sell")
+
+    assert parsed.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-03-31"), "nav": pytest.approx(1.7351228)}
     ]
 
 

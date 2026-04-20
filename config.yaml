@@ -228,7 +228,8 @@ funds:
   - name: "Selector High Conviction Equity Fund"
     source: scraper
     scraper_id: "selector_unit_prices_xlsx"
-    unit_prices_url: "https://cdn.prod.website-files.com/5c3cc8bfe91a85c9f0ded1a3/69ae061a75009980ad5a4de4_Wholesale%20Fund%20Unit%20Prices.xlsx"
+    url: "https://www.selectorfund.com.au/wholesale-fund"
+    unit_prices_url: "https://cdn.prod.website-files.com/5c3cc8bfe91a85c9f0ded1a3/69dd89bf13fd167c3a73210d_Wholesale%20Fund%20Unit%20Prices.xlsx"
     sheet_name: "Wholesale Fund Unit Prices"
     price_field: "Exit Price"
     stale_after_days: 45
@@ -297,7 +298,7 @@ funds:
     url: "https://www.eqt.com.au/Our-Services/Corporate/Fund-Services/Institutional-Funds/Historical-Prices?id=ddf4a3b4-cc69-43ec-a2ac-6898add1fe61"
     fund_id: "ETL0060"
     price_field: "sell"
-    fact_sheet_index_url: "https://www.allangray.com.au/"
+    fact_sheet_index_url: "https://www.allangray.com.au/au/adviser/allan-gray-australia-equity-fund/"
     share_class: "A"
     stale_after_days: 35
     distribution_timing: next_price_date

@@ -17,6 +17,11 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 ## Recent Fixes
 
+### Allan Gray and Selector source freshness
+
+- Selector High Conviction Equity Fund now discovers the current unit-price workbook link from the public wholesale fund page instead of relying only on a versioned Webflow asset URL.
+- Allan Gray Australian Equity now keeps the EQT Class A historical sell-price feed as the daily history source and appends the official Allan Gray Class A fact-sheet month-end price, converted from NAV to the configured sell-price basis, when that fact sheet is newer than the EQT feed.
+
 ### Benchmark-relative Teams delivery
 
 - The Teams card now shows the full benchmark-relative performance table rather than the absolute table.

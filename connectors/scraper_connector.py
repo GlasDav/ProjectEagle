@@ -8,7 +8,7 @@ import time
 import warnings
 from io import StringIO
 from typing import Callable
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import pandas as pd
 import requests
@@ -1250,12 +1250,32 @@ def _parse_selector_unit_prices_frame(
     return prices, distributions
 
 
+def _find_selector_unit_prices_workbook_url(page_html: str, page_url: str) -> str:
+    soup = BeautifulSoup(page_html, "html.parser")
+    for link in soup.find_all("a", href=True):
+        label = link.get_text(" ", strip=True).casefold()
+        href = str(link["href"]).strip()
+        if "unit prices spreadsheet" in label and href.lower().split("?", 1)[0].endswith(".xlsx"):
+            return urljoin(page_url, href)
+
+    raise ConnectorValidationError("Selector unit price workbook link was not found on the source page.")
+
+
 def _build_allan_gray_fact_sheet_candidates(page_html: str, share_class: str) -> list[str]:
     normalized_share_class = str(share_class).strip().upper()
     pdf_urls = re.findall(r"https://[^\"'\s]+\.pdf", page_html, flags=re.I)
     direct_matches = [url for url in pdf_urls if f"Class-{normalized_share_class}" in url or f"Class%20{normalized_share_class}" in url]
     if direct_matches:
-        return direct_matches
+        fact_sheet_matches = [
+            url
+            for url in direct_matches
+            if "fact-sheet" in url.casefold() and "equity-fund" in url.casefold()
+        ]
+        ordered_matches: list[str] = []
+        for candidate in [*fact_sheet_matches, *direct_matches]:
+            if candidate not in ordered_matches:
+                ordered_matches.append(candidate)
+        return ordered_matches
 
     class_a_url = next((url for url in pdf_urls if "AGA-Equity-Fund-Class-A" in url and "Fact-Sheet" in url), None)
     if not class_a_url:
@@ -1325,6 +1345,38 @@ def _parse_allan_gray_fact_sheet_distributions(pdf_text: str) -> pd.DataFrame:
             "distribution": [float(cpu_text) / 100.0 for _, cpu_text in matches],
         }
     ).dropna(subset=["date"])
+
+
+def _parse_allan_gray_fact_sheet_latest_price(pdf_text: str, price_field: str) -> pd.DataFrame:
+    normalized_price_field = str(price_field).strip().casefold()
+    if normalized_price_field not in {"buy", "sell", "nav"}:
+        raise ConnectorValidationError(f"Unsupported Allan Gray fact sheet price field '{price_field}'.")
+
+    date_match = re.search(r"FUND FACT SHEET\s+(\d{1,2}\s+[A-Za-z]+\s+\d{4})", pdf_text, flags=re.I)
+    nav_match = re.search(r"Price\s+\(net asset value\)\s+AUD\s+([0-9]+(?:\.[0-9]+)?)", pdf_text, flags=re.I)
+    if not date_match or not nav_match:
+        raise ConnectorValidationError("Could not parse Allan Gray fact sheet date and NAV.")
+
+    nav_value = float(nav_match.group(1))
+    price_value = nav_value
+    if normalized_price_field in {"buy", "sell"}:
+        spread_match = re.search(
+            r"Buy/sell spread\s+([+-]?[0-9]+(?:\.[0-9]+)?)\s*/\s*([+-]?[0-9]+(?:\.[0-9]+)?)%",
+            pdf_text,
+            flags=re.I,
+        )
+        if not spread_match:
+            raise ConnectorValidationError("Could not parse Allan Gray fact sheet buy/sell spread.")
+        buy_spread = float(spread_match.group(1)) / 100.0
+        sell_spread = float(spread_match.group(2)) / 100.0
+        price_value = nav_value * (1 + (buy_spread if normalized_price_field == "buy" else sell_spread))
+
+    return pd.DataFrame(
+        {
+            "date": [pd.to_datetime(date_match.group(1), errors="coerce")],
+            "nav": [price_value],
+        }
+    ).dropna(subset=["date", "nav"])
 
 
 def _fetch_feprecision_fund_info(session: requests.Session, fund_config: dict) -> dict:
@@ -2093,13 +2145,22 @@ def scrape_allan_gray_eqt(
         raise ConnectorValidationError("allan_gray_eqt scraper requires 'fund_id'.")
 
     response = _get_with_retry(session, url, timeout=20)
-    prices = _parse_eqt_historical_prices_page(response.text, str(fund_id), fund_config.get("price_field", "sell"))
+    price_field = fund_config.get("price_field", "sell")
+    prices = _parse_eqt_historical_prices_page(response.text, str(fund_id), price_field)
 
     fact_sheet_index_url = fund_config.get("fact_sheet_index_url")
     if not fact_sheet_index_url:
         raise ConnectorValidationError("allan_gray_eqt scraper requires 'fact_sheet_index_url'.")
     pdf_text = _fetch_allan_gray_fact_sheet_text(fact_sheet_index_url, str(fund_config.get("share_class", "B")))
     distributions = _parse_allan_gray_fact_sheet_distributions(pdf_text)
+    latest_price = _parse_allan_gray_fact_sheet_latest_price(pdf_text, price_field)
+    if not latest_price.empty:
+        prices = (
+            pd.concat([prices, latest_price], ignore_index=True)
+            .sort_values("date")
+            .drop_duplicates(subset=["date"], keep="last")
+            .reset_index(drop=True)
+        )
 
     return _merge_prices_and_distributions(
         prices,
@@ -2348,9 +2409,14 @@ def scrape_selector_unit_prices_xlsx(
     fund_config: dict,
     session: requests.Session,
 ) -> pd.DataFrame:
-    workbook_url = fund_config.get("unit_prices_url") or url
+    source_page_url = url or fund_config.get("source_page_url")
+    if source_page_url:
+        page_response = _get_with_retry(session, str(source_page_url), timeout=20)
+        workbook_url = _find_selector_unit_prices_workbook_url(page_response.text, str(source_page_url))
+    else:
+        workbook_url = fund_config.get("unit_prices_url")
     if not workbook_url:
-        raise ConnectorValidationError("selector_unit_prices_xlsx scraper requires 'unit_prices_url'.")
+        raise ConnectorValidationError("selector_unit_prices_xlsx scraper requires 'url' or 'unit_prices_url'.")
 
     workbook_response = _get_with_retry(session, workbook_url, timeout=20)
     workbook = pd.ExcelFile(io.BytesIO(workbook_response.content))
