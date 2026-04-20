@@ -2,12 +2,12 @@
 
 This file is the quick onboarding reference for the live PerfSraper configuration.
 
-## As Of April 6, 2026
+## As Of April 20, 2026
 
 - Benchmark: S&P/ASX 200 Accumulation via `^AXJT`
-- Live funds: 33
-- Disabled scraper placeholders: 8
-- Live source mix: 31 scraper-backed `ex_distribution` funds plus 2 ASX dual-access ETFs using `adjusted_close`
+- Live funds: 32
+- Disabled scraper placeholders: 9
+- Live source mix: 30 scraper-backed `ex_distribution` funds plus 2 ASX dual-access ETFs using `adjusted_close`
 
 ## Active Invariants
 
@@ -17,10 +17,10 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 ## Recent Fixes
 
-### Allan Gray and Selector source freshness
+### Selector source freshness and Allan Gray deactivation
 
 - Selector High Conviction Equity Fund now discovers the current unit-price workbook link from the public wholesale fund page instead of relying only on a versioned Webflow asset URL.
-- Allan Gray Australian Equity now keeps the EQT Class A historical sell-price feed as the daily history source and appends the official Allan Gray Class A fact-sheet month-end price, converted from NAV to the configured sell-price basis, when that fact sheet is newer than the EQT feed.
+- Allan Gray Australian Equity is disabled in the default lineup because the public daily EQT price feed is stale and the official month-end fact-sheet price is not suitable for daily MTD ranking.
 
 ### Benchmark-relative Teams delivery
 
@@ -55,7 +55,7 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Selector High Conviction Equity Fund now reads Selector's public wholesale unit-price workbook, including the embedded distribution column.
 - Hyperion Australian Growth Companies Fund now combines Hyperion's public daily price CSV with distribution breakdown workbooks discovered via the public media API.
 - Solaris Core Australian Equity Fund now reads Solaris' public website tables for unit prices and distributions. The publicly reachable history currently begins on `2021-10-18`, so 5Y output can remain `N/A` until Solaris publishes a longer series.
-- Allan Gray Australia Equity Fund now combines the official Equity Trustees Class B historical-prices page with annual distributions parsed from the Allan Gray Class B fact sheet. The source uses `distribution_timing: next_price_date` because the published EQT distribution row is cum-distribution.
+- Allan Gray Australia Equity Fund has a scraper path combining Equity Trustees prices and Allan Gray fact sheet data, but is disabled because current public data does not provide daily MTD coverage.
 
 ### Style metadata
 
@@ -92,7 +92,7 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 - Lazard Select Australian Equity now combines Lazard's public `api/products?id=183&type=Fund` NAV history with official annual and legacy distribution PDFs for the W class, aligned to the next available price date.
 - Lazard Australian Equity (Benchmark Unconstrained) now uses the same Lazard public source family, mapped to the closest publicly exposed Australian Equity W class feed (`product_id: 182`) because Lazard's benchmark-unconstrained strategy page does not publish its own unit-price history.
-- Allan Gray Australian Equity now uses the exact EQT Class A historical-price feed (`ETL0060`) plus Allan Gray Class A fact-sheet distributions, with the older `Allan Gray Australia Equity Fund` name retained as an alias instead of a second live row.
+- Allan Gray Australian Equity has an exact EQT Class A historical-price feed (`ETL0060`) plus Allan Gray Class A fact-sheet distributions, with the older `Allan Gray Australia Equity Fund` name retained as an alias, but remains disabled until a durable daily source is available.
 
 ### Fifth competitor implementation batch
 
@@ -126,7 +126,6 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Selector High Conviction Equity Fund
 - Hyperion Australian Growth Companies Fund
 - Solaris Core Australian Equity Fund
-- Allan Gray Australian Equity
 - Wavestone Australian Share Fund
 - DNR High Conviction
 - Investors Mutual Australian Share Fund
@@ -148,6 +147,7 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 - Legacy placeholders carried forward from earlier source work: Regal Australian Long Short Equity Fund, L1 Capital Catalyst Fund, Northcape Core, and Auscap High Conviction.
 - Firetrail competitor-sheet placeholders awaiting durable public sources: Schroder Australian Equity Fund, Chester Opportunities Fund, Martin Currie Australia Value Equity, and AB Concentrated Australian Equities.
+- Allan Gray Australian Equity is disabled because the official daily price feed currently stops at `2026-03-09`; the month-end fact sheet is useful for longer-period history but not daily MTD ranking.
 
 ## Verification Baseline
 
@@ -162,7 +162,6 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
   - `py main.py --no-cache --fund "Selector"`
   - `py main.py --no-cache --fund "Hyperion"`
   - `py main.py --no-cache --fund "Solaris"`
-  - `py main.py --no-cache --fund "Allan Gray"`
   - `py main.py --no-cache --fund "Vanguard Australian Shares Index"`
   - `py main.py --no-cache --fund "RQI Australian Value"`
   - `py main.py --no-cache --fund "First Sentier"`

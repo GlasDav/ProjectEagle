@@ -26,12 +26,12 @@ The rendered terminal, HTML, Excel, and Teams tables now include a `Style` colum
 - Some scraper-backed funds report distributions on the cum-price row rather than the next ex-price row. Those sources use `distribution_timing: next_price_date` in `config.yaml` so distributions are reinvested against the correct tradable price.
 - Airlie historical prices are sourced from a multi-sheet workbook. The scraper reads all sheets and derives distributions from rows flagged as `ex`.
 - Solaris Core Australian Equity Fund is sourced from Solaris' public page tables for unit prices and distributions. The currently public history begins on `2021-10-18`, so 5Y output can remain `N/A` until the public source lengthens.
-- Allan Gray Australia Equity Fund is sourced from the official Equity Trustees Class B historical-prices page plus the Allan Gray Class B fact sheet distributions. This source uses `distribution_timing: next_price_date` because the published EQT prices are cum-distribution on the distribution row.
+- Allan Gray Australia Equity Fund has a disabled scraper path using Equity Trustees prices and Allan Gray fact sheet data. It is not in the default report because the public daily feed is stale and the month-end fact sheet price is not suitable for daily MTD ranking.
 - Scraper-backed funds can lag the report date. When that happens, the rendered tables show the fund row as `as of YYYY-MM-DD, stale Nd` so the return is not mistaken for a same-day value.
 
 ## Style Mapping
 
-- `value`: Allan Gray Australia Equity Fund, Perpetual Industrial, Perpetual Pure Value
+- `value`: Perpetual Industrial, Perpetual Pure Value
 - `growth`: Fidelity Australian Equities Fund, Ausbil Active Equity, Bennelong Concentrated, ECP Growth Companies, Hyperion Australian Growth Companies Fund, Smallco Broadcap
 - `agnostic`: Firetrail High Conviction Fund, Airlie Australian Share Fund, Greencape High Conviction, Greencape Broadcap, Chester High Conviction Fund, Pendal Australian Focus Fund, Selector High Conviction Equity Fund, Solaris Core Australian Equity Fund
 
@@ -49,7 +49,6 @@ py main.py --no-cache --fund "Firetrail"
 py main.py --no-cache --fund "Fidelity"
 py main.py --no-cache --fund "Airlie"
 py main.py --no-cache --fund "Solaris"
-py main.py --no-cache --fund "Allan Gray"
 py main.py --no-cache --export xlsx
 py main.py --no-cache --export html
 py main.py --no-cache --export all

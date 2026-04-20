@@ -290,6 +290,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Allan Gray Australian Equity"
+    enabled: false
+    disabled_reason: "Official public daily price feed is stale; month-end fact sheet price is not suitable for daily MTD ranking."
     aliases:
       - "Allan Gray Australia Equity Fund"
     apir_code: "ETL0060AU"
