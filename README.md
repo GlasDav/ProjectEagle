@@ -27,13 +27,14 @@ The rendered terminal, HTML, Excel, and Teams tables now include a `Style` colum
 - Airlie historical prices are sourced from a multi-sheet workbook. The scraper reads all sheets and derives distributions from rows flagged as `ex`.
 - Solaris Core Australian Equity Fund is sourced from Solaris' public page tables for unit prices and distributions. The currently public history begins on `2021-10-18`, so 5Y output can remain `N/A` until the public source lengthens.
 - Allan Gray Australia Equity Fund has a disabled scraper path using Equity Trustees prices and Allan Gray fact sheet data. It is not in the default report because the public daily feed is stale and the month-end fact sheet price is not suitable for daily MTD ranking.
+- Selector High Conviction Equity Fund is disabled because the public source mapping appears wrong and should not be included in the default report.
 - Scraper-backed funds can lag the report date. When that happens, the rendered tables show the fund row as `as of YYYY-MM-DD, stale Nd` so the return is not mistaken for a same-day value.
 
 ## Style Mapping
 
 - `value`: Perpetual Industrial, Perpetual Pure Value
 - `growth`: Fidelity Australian Equities Fund, Ausbil Active Equity, Bennelong Concentrated, ECP Growth Companies, Hyperion Australian Growth Companies Fund, Smallco Broadcap
-- `agnostic`: Firetrail High Conviction Fund, Airlie Australian Share Fund, Greencape High Conviction, Greencape Broadcap, Chester High Conviction Fund, Pendal Australian Focus Fund, Selector High Conviction Equity Fund, Solaris Core Australian Equity Fund
+- `agnostic`: Firetrail High Conviction Fund, Airlie Australian Share Fund, Greencape High Conviction, Greencape Broadcap, Chester High Conviction Fund, Pendal Australian Focus Fund, Solaris Core Australian Equity Fund
 
 ## APIR And Morningstar Research
 
@@ -109,7 +110,7 @@ What it does:
 - posts the Teams summary card from GitHub instead of your PC
 - uploads the generated HTML report as a workflow artifact
 - calculates the report as of `T-2` in `Australia/Sydney`
-- handles Sydney daylight saving by checking the local `Australia/Sydney` hour before sending
+- handles Sydney daylight saving with paired UTC cron entries and the triggering cron string, so delayed runner starts do not skip the real daily send
 
 Before it can run, add this GitHub Actions secret in your repository:
 

@@ -226,6 +226,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Selector High Conviction Equity Fund"
+    enabled: false
+    disabled_reason: "Removed from the default report because the public source mapping appears wrong."
     source: scraper
     scraper_id: "selector_unit_prices_xlsx"
     url: "https://www.selectorfund.com.au/wholesale-fund"

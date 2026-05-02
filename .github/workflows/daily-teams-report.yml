@@ -3,8 +3,10 @@ name: Daily Teams Report
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 23 * * *"
-    - cron: "0 0 * * *"
+    # 10:37 Australia/Sydney during daylight saving time.
+    - cron: "37 23 * * *"
+    # 10:37 Australia/Sydney during standard time.
+    - cron: "37 0 * * *"
 
 jobs:
   send-report:
@@ -26,21 +28,31 @@ jobs:
       - name: Resolve Sydney schedule window
         id: schedule
         shell: bash
+        env:
+          TRIGGERING_SCHEDULE: ${{ github.event.schedule }}
         run: |
-          LOCAL_HOUR=$(TZ=Australia/Sydney date +%H)
+          SYDNEY_OFFSET=$(TZ=Australia/Sydney date +%z)
           REPORT_DATE=$(TZ=Australia/Sydney date -d '2 days ago' +%F)
-          echo "local_hour=$LOCAL_HOUR" >> "$GITHUB_OUTPUT"
+          EXPECTED_SCHEDULE="37 0 * * *"
+          if [ "$SYDNEY_OFFSET" = "+1100" ]; then
+            EXPECTED_SCHEDULE="37 23 * * *"
+          fi
+
+          echo "sydney_offset=$SYDNEY_OFFSET" >> "$GITHUB_OUTPUT"
+          echo "triggering_schedule=$TRIGGERING_SCHEDULE" >> "$GITHUB_OUTPUT"
+          echo "expected_schedule=$EXPECTED_SCHEDULE" >> "$GITHUB_OUTPUT"
           echo "report_date=$REPORT_DATE" >> "$GITHUB_OUTPUT"
 
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$LOCAL_HOUR" = "10" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$TRIGGERING_SCHEDULE" = "$EXPECTED_SCHEDULE" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Skip outside 10:00 Australia/Sydney
+      - name: Skip inactive Sydney DST schedule
         if: steps.schedule.outputs.should_run != 'true'
-        run: echo "Skipping scheduled run because local Sydney time is not 10:00."
+        run: |
+          echo "Skipping scheduled run for '${{ steps.schedule.outputs.triggering_schedule }}'; expected '${{ steps.schedule.outputs.expected_schedule }}' for Sydney offset ${{ steps.schedule.outputs.sydney_offset }}."
 
       - name: Validate Teams webhook secret
         if: steps.schedule.outputs.should_run == 'true'

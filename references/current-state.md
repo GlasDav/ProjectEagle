@@ -2,12 +2,12 @@
 
 This file is the quick onboarding reference for the live PerfSraper configuration.
 
-## As Of April 20, 2026
+## As Of May 2, 2026
 
 - Benchmark: S&P/ASX 200 Accumulation via `^AXJT`
-- Live funds: 32
-- Disabled scraper placeholders: 9
-- Live source mix: 30 scraper-backed `ex_distribution` funds plus 2 ASX dual-access ETFs using `adjusted_close`
+- Live funds: 31
+- Disabled scraper placeholders: 10
+- Live source mix: 29 scraper-backed `ex_distribution` funds plus 2 ASX dual-access ETFs using `adjusted_close`
 
 ## Active Invariants
 
@@ -17,10 +17,15 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 ## Recent Fixes
 
-### Selector source freshness and Allan Gray deactivation
+### Selector and Allan Gray deactivation
 
-- Selector High Conviction Equity Fund now discovers the current unit-price workbook link from the public wholesale fund page instead of relying only on a versioned Webflow asset URL.
+- Selector High Conviction Equity Fund is disabled in the default lineup because the public source mapping appears wrong.
 - Allan Gray Australian Equity is disabled in the default lineup because the public daily EQT price feed is stale and the official month-end fact-sheet price is not suitable for daily MTD ranking.
+
+### GitHub Actions schedule reliability
+
+- The daily Teams workflow now uses 10:37 Australia/Sydney-equivalent UTC cron entries and gates on the triggering cron plus Sydney UTC offset.
+- This avoids silently skipping the real scheduled send when GitHub starts a scheduled runner late.
 
 ### Benchmark-relative Teams delivery
 
@@ -52,7 +57,6 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Bennelong Concentrated now downloads the public Bennelong daily unit-price sheet and uses the published distribution CPU plus ex-distribution redemption price on distribution rows.
 - Smallco Broadcap now reads the public Smallco monthly history tables and reconstructs ex-distribution month-end rows from the paired pre and post distribution entries.
 - Chester High Conviction Fund now reads Chester's public Google Sheet and preserves the ex-price row on distribution dates instead of the same-day `CUM` row.
-- Selector High Conviction Equity Fund now reads Selector's public wholesale unit-price workbook, including the embedded distribution column.
 - Hyperion Australian Growth Companies Fund now combines Hyperion's public daily price CSV with distribution breakdown workbooks discovered via the public media API.
 - Solaris Core Australian Equity Fund now reads Solaris' public website tables for unit prices and distributions. The publicly reachable history currently begins on `2021-10-18`, so 5Y output can remain `N/A` until Solaris publishes a longer series.
 - Allan Gray Australia Equity Fund has a scraper path combining Equity Trustees prices and Allan Gray fact sheet data, but is disabled because current public data does not provide daily MTD coverage.
@@ -123,7 +127,6 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Pendal Australian Focus Fund
 - Smallco Broadcap
 - Chester High Conviction Fund
-- Selector High Conviction Equity Fund
 - Hyperion Australian Growth Companies Fund
 - Solaris Core Australian Equity Fund
 - Wavestone Australian Share Fund
@@ -147,6 +150,7 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 - Legacy placeholders carried forward from earlier source work: Regal Australian Long Short Equity Fund, L1 Capital Catalyst Fund, Northcape Core, and Auscap High Conviction.
 - Firetrail competitor-sheet placeholders awaiting durable public sources: Schroder Australian Equity Fund, Chester Opportunities Fund, Martin Currie Australia Value Equity, and AB Concentrated Australian Equities.
+- Selector High Conviction Equity Fund is disabled because the public source mapping appears wrong.
 - Allan Gray Australian Equity is disabled because the official daily price feed currently stops at `2026-03-09`; the month-end fact sheet is useful for longer-period history but not daily MTD ranking.
 
 ## Verification Baseline
@@ -159,7 +163,6 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
   - `py main.py --no-cache --fund "Bennelong"`
   - `py main.py --no-cache --fund "Smallco"`
   - `py main.py --no-cache --fund "Chester"`
-  - `py main.py --no-cache --fund "Selector"`
   - `py main.py --no-cache --fund "Hyperion"`
   - `py main.py --no-cache --fund "Solaris"`
   - `py main.py --no-cache --fund "Vanguard Australian Shares Index"`
