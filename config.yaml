@@ -4,6 +4,26 @@ benchmark:
   ticker: "^AXJT"
   nav_type: total_return
 
+competitor_sets:
+  - id: long_short_funds
+    title: "Long-short funds"
+    funds:
+      - "Firetrail Alpha Plus Fund Complex ETF"
+      - "Ten Cap Alpha Plus Complex ETF"
+      - "Sage Capital Equity Plus Fund"
+      - "Perpetual SHARE-PLUS Long-Short Fund"
+      - "Regal Australian Long Short Equity Fund"
+      - "Acadian Australian Equity Long Short Fund"
+      - "Vinva Australian Equity Alpha Extension Fund"
+
+  - id: market_neutral_funds
+    title: "Market neutral funds"
+    funds:
+      - "Acadian Wholesale Australian Market Neutral Fund"
+      - "Sage Capital Absolute Return Fund"
+      - "Regal Tasman Market Neutral Fund"
+      - "Bennelong Market Neutral Fund"
+
 funds:
   - name: "Vanguard Australian Shares ETF"
     enabled: false
@@ -48,6 +68,35 @@ funds:
     price_field: "Exit Price"
     distribution_field: "Distribution"
     distribution_timing: next_price_date
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Firetrail Alpha Plus Fund Complex ETF"
+    aliases:
+      - "Firetrail Alpha Plus (FIRE ETF)"
+    default_report: false
+    source: yfinance
+    ticker: "FIRE.AX"
+    style: agnostic
+    nav_type: adjusted_close
+
+  - name: "Ten Cap Alpha Plus Complex ETF"
+    aliases:
+      - "Ten Cap Alpha Plus Complex ETF (ASX:TCAP)"
+    default_report: false
+    source: yfinance
+    ticker: "TCAP.AX"
+    style: agnostic
+    nav_type: adjusted_close
+
+  - name: "Sage Capital Equity Plus Fund"
+    enabled: false
+    default_report: false
+    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    apir_code: "CHN8862AU"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
     style: agnostic
     nav_type: ex_distribution
 
@@ -129,6 +178,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Investors Mutual Australian Share Fund"
+    enabled: false
+    disabled_reason: "Removed from the default report list."
     apir_code: "IML0002AU"
     source: scraper
     scraper_id: "iml_ajax_exports"
@@ -143,9 +194,90 @@ funds:
   # means the app stays autonomous by default instead of depending on manual CSVs.
   - name: "Regal Australian Long Short Equity Fund"
     enabled: false
+    default_report: false
+    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
     source: scraper
     scraper_id: "example_manager"
     url: ""
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Acadian Australian Equity Long Short Fund"
+    enabled: false
+    default_report: false
+    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    apir_code: "FSF3982AU"
+    aliases:
+      - "Acadian Aust Equity Long Short Class A"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Vinva Australian Equity Alpha Extension Fund"
+    enabled: false
+    default_report: false
+    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    apir_code: "MGE6468AU"
+    aliases:
+      - "Vinva Australian Alpha Extension Fund"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Acadian Wholesale Australian Market Neutral Fund"
+    enabled: false
+    default_report: false
+    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    apir_code: "FSF1674AU"
+    aliases:
+      - "Acadian Market Neutral Fund"
+      - "Acadian Australian Market Neutral Fund"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Sage Capital Absolute Return Fund"
+    enabled: false
+    default_report: false
+    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    aliases:
+      - "Sage Market Neutral Fund"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Regal Tasman Market Neutral Fund"
+    enabled: false
+    default_report: false
+    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    apir_code: "RGL0001AU"
+    aliases:
+      - "Regal Tasman Fund"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Bennelong Market Neutral Fund"
+    enabled: false
+    default_report: false
+    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    apir_code: "BFL0016AU"
+    aliases:
+      - "Bennelong Market Neutral"
+    source: scraper
+    scraper_id: "example_manager"
+    url: ""
+    style: agnostic
     nav_type: ex_distribution
 
   - name: "L1 Capital Catalyst Fund"
@@ -179,6 +311,18 @@ funds:
     scraper_id: "perpetual_family"
     portfolio_id: "128"
     fund_id: "2978"
+    price_field: "Exit Price"
+    style: value
+    nav_type: ex_distribution
+
+  - name: "Perpetual SHARE-PLUS Long-Short Fund"
+    aliases:
+      - "Perpetual Share Plus Long Short Fund"
+    default_report: false
+    source: scraper
+    scraper_id: "perpetual_family"
+    portfolio_id: "133"
+    fund_id: "3009"
     price_field: "Exit Price"
     style: value
     nav_type: ex_distribution
@@ -252,6 +396,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Smallco Broadcap"
+    enabled: false
+    disabled_reason: "Removed from the default report list."
     source: scraper
     scraper_id: "smallco_monthly_history"
     url: "https://www.smallco.com.au/performance/sbf/"
@@ -330,11 +476,14 @@ funds:
     nav_type: ex_distribution
 
   - name: "Vanguard Australian Shares Index"
+    enabled: false
+    disabled_reason: "Removed from the default report because it closely tracks the benchmark index."
     apir_code: "VAN0002AU"
     source: scraper
     scraper_id: "vanguard_personal_api"
     url: "https://www.vanguard.com.au/personal/invest-with-us/fund?portId=8100&tab=prices-and-distributions"
     port_id: "8100"
+    distribution_timing: next_price_date
     style: agnostic
     nav_type: ex_distribution
 
@@ -347,6 +496,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Dimensional Australian Value"
+    enabled: false
+    disabled_reason: "Removed from the default report list."
     apir_code: "DFA0101AU"
     aliases:
       - "Dimensional Australian Value Trust – Active ETF"
@@ -368,6 +519,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "RQI Australian Value (formerly Realindex)"
+    enabled: false
+    disabled_reason: "Removed from the default report list."
     apir_code: "FSF0976AU"
     source: scraper
     scraper_id: "first_sentier_history_csv"
@@ -386,6 +539,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Dimensional Aust Core Equity"
+    enabled: false
+    disabled_reason: "Removed from the default report list."
     apir_code: "DFA0003AU"
     aliases:
       - "Dimensional Australian Core Equity Trust – Active ETF"
@@ -437,6 +592,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "First Sentier FSI Geared Australian Share Fund"
+    enabled: false
+    disabled_reason: "Removed from the default report list."
     aliases:
       - "First Sentier Geared Australian Share Fund Complex ETF"
       - "First Sentier Geared Australian Share Fund Complex ETF (PCT) (ASX:LEVR)"

@@ -6,6 +6,8 @@ By default, reports are calculated as of `T-2` so every fund and the benchmark a
 
 The rendered terminal, HTML, Excel, and Teams tables now include a `Style` column so you can scan `Value`, `Growth`, and `Agnostic` managers without changing any ranking or return calculations.
 
+Reports can also append configured peer-set tables after the main performance table. `config.yaml` currently defines long-short and market-neutral competitor sets; funds without durable public history are carried as disabled rows with a clear source-pending status instead of invented data.
+
 ## Core Rules
 
 - Every reported number must be a total return.
@@ -33,7 +35,7 @@ The rendered terminal, HTML, Excel, and Teams tables now include a `Style` colum
 ## Style Mapping
 
 - `value`: Perpetual Industrial, Perpetual Pure Value
-- `growth`: Fidelity Australian Equities Fund, Ausbil Active Equity, Bennelong Concentrated, ECP Growth Companies, Hyperion Australian Growth Companies Fund, Smallco Broadcap
+- `growth`: Fidelity Australian Equities Fund, Ausbil Active Equity, Bennelong Concentrated, ECP Growth Companies, Hyperion Australian Growth Companies Fund
 - `agnostic`: Firetrail High Conviction Fund, Airlie Australian Share Fund, Greencape High Conviction, Greencape Broadcap, Chester High Conviction Fund, Pendal Australian Focus Fund, Solaris Core Australian Equity Fund
 
 ## APIR And Morningstar Research

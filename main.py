@@ -34,6 +34,13 @@ class FundResult:
     latest_date: pd.Timestamp | None = None
 
 
+@dataclass
+class CompetitorSetResult:
+    id: str
+    title: str
+    rows: list[dict[str, Any]]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fund total-return performance dashboard")
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
@@ -81,6 +88,43 @@ def validate_config(config: dict[str, Any], base_path: Path) -> None:
                 if "distribution" not in header.columns:
                     raise ValueError(f"{entry['name']} requires a distribution column in {file_path}")
 
+    validate_competitor_sets(config)
+
+
+def _fund_lookup(funds: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    lookup: dict[str, dict[str, Any]] = {}
+    for fund in funds:
+        names = [fund.get("name"), *fund.get("aliases", [])]
+        for name in names:
+            text = str(name or "").strip()
+            if text:
+                lookup[text.casefold()] = fund
+    return lookup
+
+
+def validate_competitor_sets(config: dict[str, Any]) -> None:
+    competitor_sets = config.get("competitor_sets") or []
+    if not isinstance(competitor_sets, list):
+        raise ValueError("competitor_sets must be a list when provided.")
+
+    funds_by_name = _fund_lookup(config.get("funds") or [])
+    seen_ids: set[str] = set()
+    for competitor_set in competitor_sets:
+        if not isinstance(competitor_set, dict):
+            raise ValueError("Each competitor set must be a mapping.")
+        set_id = str(competitor_set.get("id") or "").strip()
+        title = str(competitor_set.get("title") or "").strip()
+        fund_names = competitor_set.get("funds")
+        if not set_id or not title or not isinstance(fund_names, list) or not fund_names:
+            raise ValueError("Each competitor set requires id, title, and a non-empty funds list.")
+        if set_id in seen_ids:
+            raise ValueError(f"Duplicate competitor set id: {set_id}")
+        seen_ids.add(set_id)
+
+        missing = [str(name) for name in fund_names if str(name).strip().casefold() not in funds_by_name]
+        if missing:
+            raise ValueError(f"Competitor set '{set_id}' references unknown funds: {', '.join(missing)}")
+
 
 def get_connector(source: str):
     connectors = {
@@ -100,6 +144,14 @@ def build_identifier(config: dict[str, Any]) -> str:
 def format_style_label(style: Any) -> str:
     text = str(style or "").strip()
     return text.capitalize() if text else ""
+
+
+def is_enabled(config: dict[str, Any]) -> bool:
+    return config.get("enabled", True) is not False
+
+
+def is_default_report_fund(config: dict[str, Any]) -> bool:
+    return is_enabled(config) and config.get("default_report", True) is not False
 
 
 def fetch_data(
@@ -194,6 +246,79 @@ def to_row(result: FundResult) -> dict[str, Any]:
     return row
 
 
+def unavailable_absolute_row(fund_config: dict[str, Any]) -> dict[str, Any]:
+    reason = str(fund_config.get("disabled_reason") or "No durable public performance source has been configured.")
+    return {
+        "Fund": fund_config["name"],
+        "Style": format_style_label(fund_config.get("style")),
+        "is_benchmark": False,
+        "is_disabled": True,
+        "disabled_reason": reason,
+        "is_stale": False,
+        "error": False,
+        "stale_days": 0,
+        "latest_date": None,
+        **{period: None for period in PERIODS},
+    }
+
+
+def unavailable_relative_row(fund_config: dict[str, Any]) -> dict[str, Any]:
+    row = unavailable_absolute_row(fund_config)
+    row.pop("is_benchmark", None)
+    return row
+
+
+def build_fund_report_rows(
+    fund_config: dict[str, Any],
+    *,
+    benchmark_returns: dict[str, float | None],
+    as_of_date: pd.Timestamp,
+    start_date: str,
+    use_cache: bool,
+    cache_date: pd.Timestamp,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if not is_enabled(fund_config):
+        return unavailable_absolute_row(fund_config), unavailable_relative_row(fund_config)
+
+    try:
+        result = compute_result(
+            fund_config,
+            as_of_date=as_of_date,
+            start_date=start_date,
+            use_cache=use_cache,
+            cache_date=cache_date,
+        )
+        absolute_row = to_row(result)
+        relative = calculate_relative_returns(result.returns, benchmark_returns)
+        relative_row = {
+            "Fund": result.name,
+            "Style": result.style,
+            "is_stale": result.is_stale,
+            "error": False,
+            "stale_days": result.stale_days,
+            "latest_date": result.latest_date,
+            **relative,
+        }
+        return absolute_row, relative_row
+    except Exception as exc:
+        LOGGER.warning("Failed to process %s: %s", fund_config["name"], exc)
+        error_result = FundResult(
+            name=fund_config["name"],
+            returns={period: None for period in PERIODS},
+            style=format_style_label(fund_config.get("style")),
+            error=True,
+        )
+        return to_row(error_result), {
+            "Fund": fund_config["name"],
+            "Style": format_style_label(fund_config.get("style")),
+            "is_stale": False,
+            "error": True,
+            "stale_days": 0,
+            "latest_date": None,
+            **{period: None for period in PERIODS},
+        }
+
+
 def resolve_export_formats(export: str | None) -> set[str]:
     if export == "all":
         return {"xlsx", "html"}
@@ -243,6 +368,52 @@ def build_average_row(rows: list[dict[str, Any]], label: str = "Average") -> dic
     return average_row
 
 
+def build_competitor_set_results(
+    config: dict[str, Any],
+    *,
+    benchmark_row: dict[str, Any],
+    benchmark_returns: dict[str, float | None],
+    as_of_date: pd.Timestamp,
+    start_date: str,
+    use_cache: bool,
+    cache_date: pd.Timestamp,
+    row_cache: dict[str, tuple[dict[str, Any], dict[str, Any]]] | None = None,
+) -> list[CompetitorSetResult]:
+    funds_by_name = _fund_lookup(config.get("funds") or [])
+    cached_rows = row_cache if row_cache is not None else {}
+    results: list[CompetitorSetResult] = []
+
+    for competitor_set in config.get("competitor_sets") or []:
+        absolute_rows = [benchmark_row]
+        relative_rows: list[dict[str, Any]] = []
+        for configured_name in competitor_set["funds"]:
+            fund_config = funds_by_name[str(configured_name).strip().casefold()]
+            cache_key = str(fund_config["name"])
+            if cache_key not in cached_rows:
+                cached_rows[cache_key] = build_fund_report_rows(
+                    fund_config,
+                    benchmark_returns=benchmark_returns,
+                    as_of_date=as_of_date,
+                    start_date=start_date,
+                    use_cache=use_cache,
+                    cache_date=cache_date,
+                )
+            absolute_row, relative_row = cached_rows[cache_key]
+            absolute_rows.append(absolute_row)
+            relative_rows.append(relative_row)
+
+        sorted_absolute, sorted_relative = sort_report_rows(absolute_rows, relative_rows)
+        table_rows = [sorted_absolute[0], *sorted_relative]
+        results.append(
+            CompetitorSetResult(
+                id=str(competitor_set["id"]),
+                title=str(competitor_set["title"]),
+                rows=table_rows,
+            )
+        )
+    return results
+
+
 def main() -> int:
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -257,7 +428,7 @@ def main() -> int:
 
     fund_configs = []
     for fund in config["funds"]:
-        if fund.get("enabled", True) is False:
+        if not is_default_report_fund(fund):
             continue
         candidate = fund.copy()
         if candidate.get("file"):
@@ -298,49 +469,20 @@ def main() -> int:
 
     absolute_rows = [to_row(benchmark_result)]
     relative_rows: list[dict[str, Any]] = []
+    row_cache: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
 
     for fund_config in fund_configs:
-        try:
-            result = compute_result(
-                fund_config,
-                as_of_date=as_of_date,
-                start_date=start_date,
-                use_cache=not args.no_cache,
-                cache_date=as_of_date,
-            )
-            absolute_rows.append(to_row(result))
-            relative = calculate_relative_returns(result.returns, benchmark_returns)
-            relative_rows.append(
-                {
-                    "Fund": result.name,
-                    "Style": result.style,
-                    "is_stale": result.is_stale,
-                    "error": False,
-                    "stale_days": result.stale_days,
-                    "latest_date": result.latest_date,
-                    **relative,
-                }
-            )
-        except Exception as exc:
-            LOGGER.warning("Failed to process %s: %s", fund_config["name"], exc)
-            error_result = FundResult(
-                name=fund_config["name"],
-                returns={period: None for period in PERIODS},
-                style=format_style_label(fund_config.get("style")),
-                error=True,
-            )
-            absolute_rows.append(to_row(error_result))
-            relative_rows.append(
-                {
-                    "Fund": fund_config["name"],
-                    "Style": format_style_label(fund_config.get("style")),
-                    "is_stale": False,
-                    "error": True,
-                    "stale_days": 0,
-                    "latest_date": None,
-                    **{period: None for period in PERIODS},
-                }
-            )
+        absolute_row, relative_row = build_fund_report_rows(
+            fund_config,
+            benchmark_returns=benchmark_returns,
+            as_of_date=as_of_date,
+            start_date=start_date,
+            use_cache=not args.no_cache,
+            cache_date=as_of_date,
+        )
+        row_cache[str(fund_config["name"])] = (absolute_row, relative_row)
+        absolute_rows.append(absolute_row)
+        relative_rows.append(relative_row)
 
     absolute_rows, relative_rows = sort_report_rows(absolute_rows, relative_rows)
     absolute_average_row = build_average_row(absolute_rows)
@@ -349,7 +491,20 @@ def main() -> int:
     relative_average_row = build_average_row(relative_rows)
     if relative_average_row is not None:
         relative_rows.append(relative_average_row)
-    render_tables(absolute_rows, relative_rows, as_of_date)
+    competitor_sets = [] if args.fund else build_competitor_set_results(
+        config,
+        benchmark_row=to_row(benchmark_result),
+        benchmark_returns=benchmark_returns,
+        as_of_date=as_of_date,
+        start_date=start_date,
+        use_cache=not args.no_cache,
+        cache_date=as_of_date,
+        row_cache=row_cache,
+    )
+    if competitor_sets:
+        render_tables(absolute_rows, relative_rows, as_of_date, competitor_sets=competitor_sets)
+    else:
+        render_tables(absolute_rows, relative_rows, as_of_date)
 
     export_formats = resolve_export_formats(args.export)
     output_dir = Path(args.output_dir).resolve()
@@ -359,13 +514,13 @@ def main() -> int:
 
     if "xlsx" in export_formats:
         xlsx_path = output_dir / f"fund_performance_{as_of_date:%Y-%m-%d}.xlsx"
-        export_to_excel(absolute_rows, relative_rows, as_of_date, xlsx_path)
+        export_to_excel(absolute_rows, relative_rows, as_of_date, xlsx_path, competitor_sets=competitor_sets)
         exported_paths["xlsx"] = xlsx_path
         LOGGER.info("Wrote Excel export to %s", xlsx_path)
 
     if "html" in export_formats:
         html_path = output_dir / f"fund_performance_{as_of_date:%Y-%m-%d}.html"
-        export_to_html(absolute_rows, relative_rows, as_of_date, html_path)
+        export_to_html(absolute_rows, relative_rows, as_of_date, html_path, competitor_sets=competitor_sets)
         exported_paths["html"] = html_path
         LOGGER.info("Wrote HTML export to %s", html_path)
 
@@ -381,8 +536,8 @@ def main() -> int:
             settings=settings,
             recipients=recipients,
             subject=subject,
-            text_body=build_plaintext_report(absolute_rows, relative_rows, as_of_date),
-            html_body=build_html_report(absolute_rows, relative_rows, as_of_date),
+            text_body=build_plaintext_report(absolute_rows, relative_rows, as_of_date, competitor_sets=competitor_sets),
+            html_body=build_html_report(absolute_rows, relative_rows, as_of_date, competitor_sets=competitor_sets),
             attachments=attachments,
         )
         LOGGER.info("Sent report email to %s", ", ".join(recipients))
@@ -394,6 +549,7 @@ def main() -> int:
             absolute_rows=absolute_rows,
             relative_rows=relative_rows,
             as_of_date=as_of_date,
+            competitor_sets=competitor_sets,
         )
         LOGGER.info("Posted report summary to Teams.")
 

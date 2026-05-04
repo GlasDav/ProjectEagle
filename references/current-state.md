@@ -125,21 +125,14 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Perpetual Pure Value
 - Bennelong Concentrated
 - Pendal Australian Focus Fund
-- Smallco Broadcap
 - Chester High Conviction Fund
 - Hyperion Australian Growth Companies Fund
 - Solaris Core Australian Equity Fund
 - Wavestone Australian Share Fund
 - DNR High Conviction
-- Investors Mutual Australian Share Fund
 - Perpetual Concentrated Equity Fund
 - Forager Australian Value
 - Katana Australian Equity Fund
-- Vanguard Australian Shares Index
-- RQI Australian Value (formerly Realindex)
-- First Sentier FSI Geared Australian Share Fund
-- Dimensional Australian Value
-- Dimensional Aust Core Equity
 - AuscapAM Auscap Ex-20 Australian Equities Fund
 - Lazard Select Australian Equity
 - Lazard Australian Equity (Benchmark Unconstrained)
@@ -150,7 +143,10 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 - Legacy placeholders carried forward from earlier source work: Regal Australian Long Short Equity Fund, L1 Capital Catalyst Fund, Northcape Core, and Auscap High Conviction.
 - Firetrail competitor-sheet placeholders awaiting durable public sources: Schroder Australian Equity Fund, Chester Opportunities Fund, Martin Currie Australia Value Equity, and AB Concentrated Australian Equities.
+- Peer-set appendices are configured for long-short and market-neutral competitors. FIRE.AX, TCAP.AX, and Perpetual SHARE-PLUS have computable sources; Sage/Regal/Acadian/Vinva/Bennelong market-neutral peers remain disabled placeholders until durable public history is validated.
 - Selector High Conviction Equity Fund is disabled because the public source mapping appears wrong.
+- Vanguard Australian Shares Index is disabled because it closely tracks the benchmark index; its Vanguard API distribution parser now uses the `CASH` tax detail only rather than summing taxable components.
+- Smallco Broadcap, Investors Mutual Australian Share Fund, RQI Australian Value (formerly Realindex), First Sentier FSI Geared Australian Share Fund, Dimensional Australian Value, and Dimensional Aust Core Equity are represented in config but removed from the default report list.
 - Allan Gray Australian Equity is disabled because the official daily price feed currently stops at `2026-03-09`; the month-end fact sheet is useful for longer-period history but not daily MTD ranking.
 
 ## Verification Baseline
@@ -161,13 +157,9 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
   - `py main.py --no-cache --fund "Fidelity"`
   - `py main.py --no-cache --fund "Airlie"`
   - `py main.py --no-cache --fund "Bennelong"`
-  - `py main.py --no-cache --fund "Smallco"`
   - `py main.py --no-cache --fund "Chester"`
   - `py main.py --no-cache --fund "Hyperion"`
   - `py main.py --no-cache --fund "Solaris"`
-  - `py main.py --no-cache --fund "Vanguard Australian Shares Index"`
-  - `py main.py --no-cache --fund "RQI Australian Value"`
-  - `py main.py --no-cache --fund "First Sentier"`
   - `py main.py --no-cache --fund "Auscap"`
   - `py main.py --no-cache --fund "Lazard Select"`
   - `py main.py --no-cache --fund "Lazard Australian Equity"`

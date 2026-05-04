@@ -5,19 +5,23 @@ from pathlib import Path
 
 import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.formatting.rule import CellIsRule
-from openpyxl.styles import Font
+from openpyxl.styles import Font, PatternFill
 from rich.console import Console
 from rich.table import Table
 
 from performance import PERIODS
+from table_highlighting import HIGHLIGHT_BOTTOM, HIGHLIGHT_TOP, PerformanceHighlight, build_period_highlights
 
 
-def _format_value(value: float | None, error: bool = False) -> str:
+def _format_value(value: float | None, error: bool = False, highlight: PerformanceHighlight | None = None) -> str:
     if error:
         return "[bold red]Error[/bold red]"
     if value is None:
         return "N/A"
+    if highlight == HIGHLIGHT_TOP:
+        return f"[bold green]{value * 100:.1f}%[/bold green]"
+    if highlight == HIGHLIGHT_BOTTOM:
+        return f"[bold red]{value * 100:.1f}%[/bold red]"
     color = "green" if value >= 0 else "red"
     return f"[{color}]{value * 100:.1f}%[/{color}]"
 
@@ -39,6 +43,8 @@ def _format_public_date(latest_date) -> str:
 
 def _plain_row_label(row: dict) -> str:
     label = str(row["Fund"])
+    if row.get("is_disabled"):
+        return f"{label} ({row.get('disabled_reason') or 'Source pending'})"
     if _row_is_stale(row):
         label = f"{label} (as of {_format_public_date(row.get('latest_date'))}, stale {row['stale_days']}d)"
     return label
@@ -134,9 +140,35 @@ def _report_snapshot(absolute_rows: list[dict], relative_rows: list[dict]) -> di
     }
 
 
-def render_tables(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, console: Console | None = None) -> None:
+def _competitor_set_title(competitor_set) -> str:
+    if isinstance(competitor_set, dict):
+        return str(competitor_set.get("title") or "Competitor set")
+    return str(getattr(competitor_set, "title", "Competitor set"))
+
+
+def _competitor_set_id(competitor_set) -> str:
+    if isinstance(competitor_set, dict):
+        return str(competitor_set.get("id") or _competitor_set_title(competitor_set))
+    return str(getattr(competitor_set, "id", _competitor_set_title(competitor_set)))
+
+
+def _competitor_set_rows(competitor_set) -> list[dict]:
+    if isinstance(competitor_set, dict):
+        return list(competitor_set.get("rows") or [])
+    return list(getattr(competitor_set, "rows", []) or [])
+
+
+def render_tables(
+    absolute_rows: list[dict],
+    relative_rows: list[dict],
+    as_of_date,
+    console: Console | None = None,
+    competitor_sets: list | None = None,
+) -> None:
     console = console or Console()
-    if any(_row_is_stale(row) for row in absolute_rows + relative_rows):
+    competitor_sets = competitor_sets or []
+    competitor_rows = [row for competitor_set in competitor_sets for row in _competitor_set_rows(competitor_set)]
+    if any(_row_is_stale(row) for row in absolute_rows + relative_rows + competitor_rows):
         console.print(
             "[yellow]Note: rows marked stale use the latest public fund date shown in the row label, not the report date in the title.[/yellow]"
         )
@@ -144,34 +176,69 @@ def render_tables(absolute_rows: list[dict], relative_rows: list[dict], as_of_da
     console.print(build_rich_table(absolute_rows, f"Absolute Total Return Performance ({as_of_date:%Y-%m-%d})"))
     console.print()
     console.print(build_rich_table(relative_rows, f"Relative Total Return Performance ({as_of_date:%Y-%m-%d})"))
+    for competitor_set in competitor_sets:
+        console.print()
+        console.print(build_rich_table(_competitor_set_rows(competitor_set), f"{_competitor_set_title(competitor_set)} ({as_of_date:%Y-%m-%d})"))
 
 
 def build_rich_table(rows: list[dict], title: str) -> Table:
     table = Table(title=title)
+    highlights = build_period_highlights(rows, periods=PERIODS)
     table.add_column("Fund", style="bold")
     table.add_column("Style")
     for period in PERIODS:
         label = f"{period} (p.a.)" if period in {"3Y", "5Y"} else period
         table.add_column(label, justify="right")
 
-    for row in rows:
+    for row_index, row in enumerate(rows):
         label = row["Fund"]
         if row.get("is_benchmark"):
             label = f"[bold]{label}[/bold]"
         if row.get("is_average"):
             label = f"[bold]{label}[/bold]"
+        if row.get("is_disabled"):
+            label = f"{label} [yellow]({row.get('disabled_reason') or 'Source pending'})[/yellow]"
         if _row_is_stale(row):
             latest_date = row.get("latest_date")
             latest_label = latest_date.strftime("%Y-%m-%d") if latest_date is not None else "latest public date"
             label = f"{label} [yellow](as of {latest_label}, stale {row['stale_days']}d)[/yellow]"
 
-        values = [_format_value(row.get(period), error=row.get("error", False)) for period in PERIODS]
+        values = [
+            _format_value(row.get(period), error=row.get("error", False), highlight=highlights.get((row_index, period)))
+            for period in PERIODS
+        ]
         table.add_row(label, str(row.get("Style") or ""), *values)
 
     return table
 
 
-def build_plaintext_report(absolute_rows: list[dict], relative_rows: list[dict], as_of_date) -> str:
+def _build_plaintext_table(rows: list[dict]) -> str:
+    headers = ["Fund", "Style", *[f"{period} p.a." if period in {"3Y", "5Y"} else period for period in PERIODS]]
+    rendered_rows = [
+        [
+            _plain_row_label(row),
+            str(row.get("Style") or ""),
+            *[_format_percent(None if row.get("error") else row.get(period), error=row.get("error", False)) for period in PERIODS],
+        ]
+        for row in rows
+    ]
+
+    widths = [len(header) for header in headers]
+    for row in rendered_rows:
+        for index, value in enumerate(row):
+            widths[index] = min(max(widths[index], len(value)), 42 if index == 0 else 10)
+
+    def fit(value: str, width: int) -> str:
+        return value if len(value) <= width else value[: max(width - 1, 1)] + "…"
+
+    lines = [" | ".join(fit(header, widths[index]).ljust(widths[index]) for index, header in enumerate(headers))]
+    lines.append("-|-".join("-" * width for width in widths))
+    for row in rendered_rows:
+        lines.append(" | ".join(fit(value, widths[index]).ljust(widths[index]) for index, value in enumerate(row)))
+    return "\n".join(lines)
+
+
+def build_plaintext_report(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, competitor_sets: list | None = None) -> str:
     snapshot = _report_snapshot(absolute_rows, relative_rows)
     benchmark = snapshot["benchmark"]
     lines = [
@@ -207,10 +274,12 @@ def build_plaintext_report(absolute_rows: list[dict], relative_rows: list[dict],
             lines.append(f"- {_plain_row_label(row)}: {_format_percent(row.get('12M'))}")
 
     lines.extend(["", "The HTML version of this report includes the full styled tables."])
+    for competitor_set in competitor_sets or []:
+        lines.extend(["", f"{_competitor_set_title(competitor_set)}:", _build_plaintext_table(_competitor_set_rows(competitor_set))])
     return "\n".join(lines)
 
 
-def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_of_date) -> str:
+def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, competitor_sets: list | None = None) -> str:
     snapshot = _report_snapshot(absolute_rows, relative_rows)
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
@@ -273,6 +342,7 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
         """
         for label, value, note in summary_cards
     )
+    competitor_sections_html = _build_competitor_set_sections_html(competitor_sets or [])
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -558,6 +628,16 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
       color: var(--red);
       background: var(--red-soft);
     }}
+    .pill.top-performer {{
+      color: var(--green);
+      background: var(--green-soft);
+      box-shadow: inset 0 0 0 2px rgba(31, 125, 75, 0.28);
+    }}
+    .pill.bottom-performer {{
+      color: var(--red);
+      background: var(--red-soft);
+      box-shadow: inset 0 0 0 2px rgba(178, 79, 62, 0.28);
+    }}
     .pill.neutral {{
       color: var(--neutral);
       background: var(--neutral-soft);
@@ -664,7 +744,7 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
     <section class="table-card">
       <p class="insight-kicker">Absolute performance</p>
       <h2>Total return table</h2>
-      <p>Returns shown after reinvesting distributions where required. Green values are positive, red values are negative.</p>
+      <p>Returns shown after reinvesting distributions where required. Green highlights mark top-three results per period; red highlights mark bottom-three results.</p>
       <div class="table-wrap">
         {_build_html_table(absolute_rows, include_benchmark_marker=True)}
       </div>
@@ -679,6 +759,8 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
       </div>
     </section>
 
+    {competitor_sections_html}
+
     <section class="footer">
       Rows marked stale use the latest public fund date shown in the row, not the headline report date.
       Average rows are the simple mean of live fund returns excluding the benchmark. Three-year and five-year figures are annualized.
@@ -688,13 +770,33 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
 </html>"""
 
 
+def _build_competitor_set_sections_html(competitor_sets: list) -> str:
+    sections = []
+    for competitor_set in competitor_sets:
+        title = _competitor_set_title(competitor_set)
+        rows = _competitor_set_rows(competitor_set)
+        sections.append(
+            f"""
+    <section class="table-card" id="{escape(_competitor_set_id(competitor_set))}">
+      <p class="insight-kicker">Competitor set</p>
+      <h2>{escape(title)}</h2>
+      <div class="table-wrap">
+        {_build_html_table(rows, include_benchmark_marker=True)}
+      </div>
+    </section>
+            """
+        )
+    return "".join(sections)
+
+
 def _build_html_table(rows: list[dict], include_benchmark_marker: bool) -> str:
+    highlights = build_period_highlights(rows, periods=PERIODS)
     header_cells = "".join(
         f"<th>{escape(f'{period} (p.a.)' if period in {'3Y', '5Y'} else period)}</th>" for period in PERIODS
     )
 
     body_rows = []
-    for row in rows:
+    for row_index, row in enumerate(rows):
         row_classes: list[str] = []
         if include_benchmark_marker and row.get("is_benchmark"):
             row_classes.append("benchmark-row")
@@ -707,10 +809,15 @@ def _build_html_table(rows: list[dict], include_benchmark_marker: bool) -> str:
                 f"<div class=\"fund-meta\">Public data through {_format_public_date(latest_date)} "
                 f"({int(row['stale_days'])} day{'s' if int(row['stale_days']) != 1 else ''} stale)</div>"
             )
+        elif row.get("is_disabled"):
+            stale_meta = f"<div class=\"fund-meta\">{escape(str(row.get('disabled_reason') or 'Source pending'))}</div>"
         elif latest_date is not None:
             stale_meta = f"<div class=\"fund-meta\">Public data through {_format_public_date(latest_date)}</div>"
 
-        cells = "".join(_build_html_value_cell(row.get(period), error=row.get("error", False)) for period in PERIODS)
+        cells = "".join(
+            _build_html_value_cell(row.get(period), error=row.get("error", False), highlight=highlights.get((row_index, period)))
+            for period in PERIODS
+        )
         body_rows.append(
             f"""
             <tr class="{' '.join(row_classes)}">
@@ -740,12 +847,16 @@ def _build_html_table(rows: list[dict], include_benchmark_marker: bool) -> str:
     """
 
 
-def _build_html_value_cell(value: float | None, error: bool = False) -> str:
+def _build_html_value_cell(value: float | None, error: bool = False, highlight: PerformanceHighlight | None = None) -> str:
     classes = ["pill"]
     if error:
         classes.append("error")
     elif value is None:
         classes.append("neutral")
+    elif highlight == HIGHLIGHT_TOP:
+        classes.append("top-performer")
+    elif highlight == HIGHLIGHT_BOTTOM:
+        classes.append("bottom-performer")
     elif value >= 0:
         classes.append("positive")
     else:
@@ -755,39 +866,67 @@ def _build_html_value_cell(value: float | None, error: bool = False) -> str:
     return f"<td><span class=\"{' '.join(classes)}\">{label}</span></td>"
 
 
-def export_to_excel(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, output_path: str | Path) -> Path:
+def _sheet_name(base: str, used_names: set[str]) -> str:
+    safe = "".join(char if char not in r"[]:*?/\\" else " " for char in base).strip() or "Sheet"
+    safe = safe[:31]
+    candidate = safe
+    suffix = 2
+    while candidate in used_names:
+        tail = f" {suffix}"
+        candidate = f"{safe[:31 - len(tail)]}{tail}"
+        suffix += 1
+    used_names.add(candidate)
+    return candidate
+
+
+def export_to_excel(
+    absolute_rows: list[dict],
+    relative_rows: list[dict],
+    as_of_date,
+    output_path: str | Path,
+    competitor_sets: list | None = None,
+) -> Path:
     output = Path(output_path)
     absolute_df = _rows_to_dataframe(absolute_rows)
     relative_df = _rows_to_dataframe(relative_rows)
+    rows_by_sheet = {"Absolute": absolute_rows, "Relative": relative_rows}
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         absolute_df.to_excel(writer, sheet_name="Absolute", index=False)
         relative_df.to_excel(writer, sheet_name="Relative", index=False)
+        used_sheet_names = {"Absolute", "Relative"}
+        for competitor_set in competitor_sets or []:
+            sheet_name = _sheet_name(_competitor_set_title(competitor_set), used_sheet_names)
+            rows = _competitor_set_rows(competitor_set)
+            _rows_to_dataframe(rows).to_excel(writer, sheet_name=sheet_name, index=False)
+            rows_by_sheet[sheet_name] = rows
 
     workbook = load_workbook(output)
-    for sheet_name in ("Absolute", "Relative"):
+    top_fill = PatternFill(fill_type="solid", fgColor="FFDEF1E5")
+    bottom_fill = PatternFill(fill_type="solid", fgColor="FFF6DFD9")
+    for sheet_name in rows_by_sheet:
+        highlights = build_period_highlights(rows_by_sheet[sheet_name], periods=PERIODS)
         worksheet = workbook[sheet_name]
         worksheet["A1"].font = Font(bold=True)
         header_to_column = {worksheet.cell(row=1, column=index).value: index for index in range(1, worksheet.max_column + 1)}
         period_start_column = header_to_column.get(PERIODS[0], worksheet.max_column)
 
-        for row in worksheet.iter_rows(min_col=period_start_column, min_row=2):
+        for data_row_index, row in enumerate(worksheet.iter_rows(min_col=period_start_column, min_row=2), start=0):
             for cell in row:
                 if isinstance(cell.value, (int, float)):
                     cell.number_format = "0.0%"
-
-        if worksheet.max_row >= 2 and worksheet.max_column >= 2:
-            start_column = worksheet.cell(row=1, column=period_start_column).column_letter
-            last_column = worksheet.cell(row=1, column=worksheet.max_column).column_letter
-            data_range = f"{start_column}2:{last_column}{worksheet.max_row}"
-            worksheet.conditional_formatting.add(
-                data_range,
-                CellIsRule(operator="greaterThanOrEqual", formula=["0"], font=Font(color="008000")),
-            )
-            worksheet.conditional_formatting.add(
-                data_range,
-                CellIsRule(operator="lessThan", formula=["0"], font=Font(color="9C0006")),
-            )
+                    header = worksheet.cell(row=1, column=cell.column).value
+                    highlight = highlights.get((data_row_index, str(header)))
+                    if highlight == HIGHLIGHT_TOP:
+                        cell.font = Font(color="008000", bold=True)
+                        cell.fill = top_fill
+                    elif highlight == HIGHLIGHT_BOTTOM:
+                        cell.font = Font(color="9C0006", bold=True)
+                        cell.fill = bottom_fill
+                    elif cell.value >= 0:
+                        cell.font = Font(color="008000")
+                    else:
+                        cell.font = Font(color="9C0006")
 
         for column in worksheet.columns:
             max_length = max(len(str(cell.value or "")) for cell in column)
@@ -797,9 +936,15 @@ def export_to_excel(absolute_rows: list[dict], relative_rows: list[dict], as_of_
     return output
 
 
-def export_to_html(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, output_path: str | Path) -> Path:
+def export_to_html(
+    absolute_rows: list[dict],
+    relative_rows: list[dict],
+    as_of_date,
+    output_path: str | Path,
+    competitor_sets: list | None = None,
+) -> Path:
     output = Path(output_path)
-    output.write_text(build_html_report(absolute_rows, relative_rows, as_of_date), encoding="utf-8")
+    output.write_text(build_html_report(absolute_rows, relative_rows, as_of_date, competitor_sets=competitor_sets), encoding="utf-8")
     return output
 
 
@@ -814,5 +959,6 @@ def _rows_to_dataframe(rows: list[dict]):
         }
         for period in PERIODS:
             record[period] = None if row.get("error") else row.get(period)
+        record["Status"] = row.get("disabled_reason") if row.get("is_disabled") else ("Error" if row.get("error") else "")
         records.append(record)
     return pd.DataFrame(records)

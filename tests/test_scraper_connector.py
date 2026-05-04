@@ -777,22 +777,43 @@ def test_parse_vanguard_price_history_reads_nav_price_rows():
     ]
 
 
-def test_parse_vanguard_distribution_history_sums_actual_tax_details():
+def test_parse_vanguard_distribution_history_uses_actual_cash_distribution_only():
     payload = {
         "data": {
             "items": [
                 {
                     "exDividendDate": "2026-04-01",
                     "taxDetails": [
-                        {"distributionLevelCode": "ACTL", "distributionAmount": 0.1000},
-                        {"distributionLevelCode": "ACTL", "distributionAmount": 0.04507142},
-                        {"distributionLevelCode": "EST", "distributionAmount": 9.99},
+                        {
+                            "distributionLevelCode": "ACTL",
+                            "distributionAmount": 0.00816693,
+                            "distributionType": {"distCode": "TCAI"},
+                        },
+                        {
+                            "distributionLevelCode": "ACTL",
+                            "distributionAmount": 0.03064767,
+                            "distributionType": {"distCode": "GRSS"},
+                        },
+                        {
+                            "distributionLevelCode": "ACTL",
+                            "distributionAmount": 0.02248074,
+                            "distributionType": {"distCode": "CASH"},
+                        },
+                        {
+                            "distributionLevelCode": "EST",
+                            "distributionAmount": 9.99,
+                            "distributionType": {"distCode": "CASH"},
+                        },
                     ],
                 },
                 {
                     "recordDate": "2025-12-31",
                     "taxDetails": [
-                        {"distributionLevelCode": "ACTL", "distributionAmount": 0.0},
+                        {
+                            "distributionLevelCode": "ACTL",
+                            "distributionAmount": 0.0,
+                            "distributionType": {"distCode": "CASH"},
+                        },
                     ],
                 },
             ]
@@ -802,7 +823,7 @@ def test_parse_vanguard_distribution_history_sums_actual_tax_details():
     parsed = _parse_vanguard_distribution_history(payload)
 
     assert parsed.to_dict(orient="records") == [
-        {"date": pd.Timestamp("2026-04-01"), "distribution": pytest.approx(0.14507142)}
+        {"date": pd.Timestamp("2026-04-01"), "distribution": pytest.approx(0.02248074)}
     ]
 
 

@@ -1,6 +1,7 @@
 __pycache__/
 .pytest_cache/
 *.pyc
+.venv/
 fund_performance_*.xlsx
 fund_performance_*.html
 reports/

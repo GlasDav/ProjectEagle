@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 
 from performance import PERIODS
+from table_highlighting import HIGHLIGHT_BOTTOM, HIGHLIGHT_TOP, PerformanceHighlight, build_period_highlights
 
 
 def load_teams_webhook_url(webhook_url: str | None = None) -> str:
@@ -29,6 +30,8 @@ def _row_is_stale(row: dict) -> bool:
 
 def _format_fund_label(row: dict) -> str:
     label = str(row["Fund"])
+    if row.get("is_disabled"):
+        return f"{label} ({row.get('disabled_reason') or 'Source pending'})"
     if _row_is_stale(row) and row.get("latest_date") is not None:
         label = f"{label} (as of {pd.Timestamp(row['latest_date']):%Y-%m-%d})"
     return label
@@ -58,15 +61,34 @@ def _text_block(text: str, *, weight: str | None = None, size: str | None = None
     return block
 
 
-def _value_text_block(value: float | None, *, error: bool = False, header: bool = False) -> dict[str, Any]:
+def _value_text_block(
+    value: float | None,
+    *,
+    error: bool = False,
+    header: bool = False,
+    highlight: PerformanceHighlight | None = None,
+) -> dict[str, Any]:
     if header:
         return _text_block(_format_percent(value), weight="Bolder")
     if error:
         return _text_block("Error", color="Attention")
     if value is None:
         return _text_block("N/A", color="Accent")
+    if highlight == HIGHLIGHT_TOP:
+        return _text_block(_format_percent(value), color="Good", weight="Bolder")
+    if highlight == HIGHLIGHT_BOTTOM:
+        return _text_block(_format_percent(value), color="Attention", weight="Bolder")
     color = "Good" if value >= 0 else "Attention"
     return _text_block(_format_percent(value), color=color)
+
+
+def _format_highlighted_percent(value: float | None, highlight: PerformanceHighlight | None = None) -> str:
+    label = _format_percent(value)
+    if highlight == HIGHLIGHT_TOP:
+        return f"🟢 {label}"
+    if highlight == HIGHLIGHT_BOTTOM:
+        return f"🔴 {label}"
+    return label
 
 
 def _table_rows_with_benchmark_absolute(absolute_rows: list[dict], relative_rows: list[dict]) -> list[dict]:
@@ -178,21 +200,28 @@ def _legacy_fund_label(row: dict) -> str:
 
 
 def _build_plaintext_table(rows: list[dict]) -> str:
+    highlights = build_period_highlights(rows, periods=PERIODS)
     headers = ["Fund", "Style", *[f"{period} p.a." if period in {"3Y", "5Y"} else period for period in PERIODS]]
     rendered_rows = []
-    for row in rows:
+    for row_index, row in enumerate(rows):
         rendered_rows.append(
             [
                 _legacy_fund_label(row),
                 str(row.get("Style") or ""),
-                *[_format_percent(None if row.get("error") else row.get(period)) for period in PERIODS],
+                *[
+                    _format_highlighted_percent(
+                        None if row.get("error") else row.get(period),
+                        highlights.get((row_index, period)),
+                    )
+                    for period in PERIODS
+                ],
             ]
         )
 
     widths = [len(header) for header in headers]
     for row in rendered_rows:
         for index, value in enumerate(row):
-            widths[index] = min(max(widths[index], len(value)), 42 if index == 0 else 10)
+            widths[index] = min(max(widths[index], len(value)), 42 if index == 0 else 12)
 
     def fit(value: str, width: int) -> str:
         return value if len(value) <= width else value[: max(width - 1, 1)] + "…"
@@ -205,7 +234,81 @@ def _build_plaintext_table(rows: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date) -> dict[str, Any]:
+def _competitor_set_title(competitor_set) -> str:
+    if isinstance(competitor_set, dict):
+        return str(competitor_set.get("title") or "Competitor set")
+    return str(getattr(competitor_set, "title", "Competitor set"))
+
+
+def _competitor_set_rows(competitor_set) -> list[dict]:
+    if isinstance(competitor_set, dict):
+        return list(competitor_set.get("rows") or [])
+    return list(getattr(competitor_set, "rows", []) or [])
+
+
+def _build_adaptive_table(rows_source: list[dict]) -> dict[str, Any]:
+    headers = ["Fund", "Style", *[f"{period} (p.a.)" if period in {"3Y", "5Y"} else period for period in PERIODS]]
+    highlights = build_period_highlights(rows_source, periods=PERIODS)
+    table_rows = [
+        {
+            "type": "TableRow",
+            "cells": [{"type": "TableCell", "items": [_text_block(header, weight="Bolder")]} for header in headers],
+        }
+    ]
+
+    for row_index, row in enumerate(rows_source):
+        label_block = _text_block(
+            _format_fund_label(row),
+            weight="Bolder" if row.get("is_benchmark") or row.get("is_average") or _is_firetrail(row) else None,
+            color="Good" if _is_firetrail(row) else None,
+        )
+        cells = [
+            {"type": "TableCell", "items": [label_block]},
+            {"type": "TableCell", "items": [_text_block(str(row.get("Style") or ""))]},
+        ]
+        for period in PERIODS:
+            cells.append(
+                {
+                    "type": "TableCell",
+                    "items": [
+                        _value_text_block(
+                            row.get(period),
+                            error=row.get("error", False),
+                            highlight=highlights.get((row_index, period)),
+                        )
+                    ],
+                }
+            )
+        table_rows.append({"type": "TableRow", "cells": cells})
+
+    return {
+        "type": "Table",
+        "firstRowAsHeaders": True,
+        "showGridLines": True,
+        "gridStyle": "accent",
+        "columns": [
+            {"width": 3.2},
+            {"width": 1.2},
+            {"width": 1.0},
+            {"width": 1.0},
+            {"width": 1.0},
+            {"width": 1.0},
+            {"width": 1.0},
+            {"width": 1.0},
+        ],
+        "rows": table_rows,
+    }
+
+
+def _adaptive_competitor_set_blocks(competitor_sets: list | None) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    for competitor_set in competitor_sets or []:
+        blocks.append(_text_block(_competitor_set_title(competitor_set), weight="Bolder", size="Medium"))
+        blocks.append(_build_adaptive_table(_competitor_set_rows(competitor_set)))
+    return blocks
+
+
+def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, competitor_sets: list | None = None) -> dict[str, Any]:
     snapshot = _snapshot(absolute_rows, relative_rows)
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
@@ -240,45 +343,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
         {"title": "Stale sources", "value": str(snapshot["stale_count"])},
     ]
 
-    headers = ["Fund", "Style", *[f"{period} (p.a.)" if period in {"3Y", "5Y"} else period for period in PERIODS]]
-    table_rows = [
-        {
-            "type": "TableRow",
-            "cells": [{"type": "TableCell", "items": [_text_block(header, weight="Bolder")]} for header in headers],
-        }
-    ]
-
-    for row in table_rows_source:
-        label_block = _text_block(
-            _format_fund_label(row),
-            weight="Bolder" if row.get("is_benchmark") or row.get("is_average") or _is_firetrail(row) else None,
-            color="Good" if _is_firetrail(row) else None,
-        )
-        cells = [
-            {"type": "TableCell", "items": [label_block]},
-            {"type": "TableCell", "items": [_text_block(str(row.get("Style") or ""))]},
-        ]
-        for period in PERIODS:
-            cells.append({"type": "TableCell", "items": [_value_text_block(row.get(period), error=row.get("error", False))]})
-        table_rows.append({"type": "TableRow", "cells": cells})
-
-    table = {
-        "type": "Table",
-        "firstRowAsHeaders": True,
-        "showGridLines": True,
-        "gridStyle": "accent",
-        "columns": [
-            {"width": 3.2},
-            {"width": 1.2},
-            {"width": 1.0},
-            {"width": 1.0},
-            {"width": 1.0},
-            {"width": 1.0},
-            {"width": 1.0},
-            {"width": 1.0},
-        ],
-        "rows": table_rows,
-    }
+    table = _build_adaptive_table(table_rows_source)
 
     card_content = {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -314,6 +379,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
                 "Fund rows show excess returns versus the benchmark, and the Average row is the simple mean of live funds."
             ),
             table,
+            *_adaptive_competitor_set_blocks(competitor_sets),
         ],
     }
 
@@ -330,7 +396,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
     }
 
 
-def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date) -> dict[str, Any]:
+def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, competitor_sets: list | None = None) -> dict[str, Any]:
     snapshot = _snapshot(absolute_rows, relative_rows)
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
@@ -360,6 +426,42 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
 
     table_text = _build_plaintext_table(table_rows_source)
 
+    sections = [
+        {
+            "activityTitle": "Daily total-return snapshot",
+            "facts": [
+                {"name": "Live funds", "value": str(snapshot["fund_count"])},
+                {"name": "Ahead of benchmark (12M)", "value": f"{snapshot['ahead_count']} / {snapshot['fund_count']}"},
+                {"name": "Benchmark 12M", "value": _format_percent(None if benchmark is None else benchmark.get("12M"))},
+                {"name": "Stale sources", "value": str(snapshot["stale_count"])},
+            ],
+            "markdown": True,
+        },
+        {"title": "Benchmark", "text": benchmark_text, "markdown": True},
+        {"title": "Best 12M total return", "text": best_absolute_text, "markdown": True},
+        {"title": "Best 12M excess return", "text": best_relative_text, "markdown": True},
+        {"title": "Style lens", "text": str(snapshot["style_commentary"]), "markdown": True},
+        {"title": "Top 12M funds", "text": top_funds, "markdown": True},
+        {
+            "title": f"Full performance table (as at {pd.Timestamp(as_of_date):%Y-%m-%d})",
+            "text": (
+                "Benchmark row shows absolute benchmark total returns. "
+                "Fund rows show excess returns versus the benchmark. "
+                "Average row is the simple mean of live funds.\n\n"
+                f"{table_text}"
+            ),
+            "markdown": True,
+        },
+    ]
+    for competitor_set in competitor_sets or []:
+        sections.append(
+            {
+                "title": _competitor_set_title(competitor_set),
+                "text": _build_plaintext_table(_competitor_set_rows(competitor_set)),
+                "markdown": True,
+            }
+        )
+
     return {
         "@type": "MessageCard",
         "@context": "http://schema.org/extensions",
@@ -367,33 +469,7 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
         "summary": f"Australian Equity Fund Scorecard | {pd.Timestamp(as_of_date):%Y-%m-%d}",
         "title": f"Australian Equity Fund Scorecard | {pd.Timestamp(as_of_date):%Y-%m-%d}",
         "text": "All figures are total return. Relative highlights are measured against the S&P/ASX 200 Accumulation benchmark.",
-        "sections": [
-            {
-                "activityTitle": "Daily total-return snapshot",
-                "facts": [
-                    {"name": "Live funds", "value": str(snapshot["fund_count"])},
-                    {"name": "Ahead of benchmark (12M)", "value": f"{snapshot['ahead_count']} / {snapshot['fund_count']}"},
-                    {"name": "Benchmark 12M", "value": _format_percent(None if benchmark is None else benchmark.get("12M"))},
-                    {"name": "Stale sources", "value": str(snapshot["stale_count"])},
-                ],
-                "markdown": True,
-            },
-            {"title": "Benchmark", "text": benchmark_text, "markdown": True},
-            {"title": "Best 12M total return", "text": best_absolute_text, "markdown": True},
-            {"title": "Best 12M excess return", "text": best_relative_text, "markdown": True},
-            {"title": "Style lens", "text": str(snapshot["style_commentary"]), "markdown": True},
-            {"title": "Top 12M funds", "text": top_funds, "markdown": True},
-            {
-                "title": f"Full performance table (as at {pd.Timestamp(as_of_date):%Y-%m-%d})",
-                "text": (
-                    "Benchmark row shows absolute benchmark total returns. "
-                    "Fund rows show excess returns versus the benchmark. "
-                    "Average row is the simple mean of live funds.\n\n"
-                    f"{table_text}"
-                ),
-                "markdown": True,
-            },
-        ],
+        "sections": sections,
     }
 
 
@@ -402,10 +478,11 @@ def build_teams_message_card(
     relative_rows: list[dict],
     as_of_date,
     webhook_url: str | None = None,
+    competitor_sets: list | None = None,
 ) -> dict[str, Any]:
     if _is_legacy_connector_webhook(webhook_url):
-        return _build_legacy_teams_message_card(absolute_rows, relative_rows, as_of_date)
-    return _build_adaptive_teams_message_card(absolute_rows, relative_rows, as_of_date)
+        return _build_legacy_teams_message_card(absolute_rows, relative_rows, as_of_date, competitor_sets=competitor_sets)
+    return _build_adaptive_teams_message_card(absolute_rows, relative_rows, as_of_date, competitor_sets=competitor_sets)
 
 
 def send_teams_message_card(
@@ -413,9 +490,10 @@ def send_teams_message_card(
     absolute_rows: list[dict],
     relative_rows: list[dict],
     as_of_date,
+    competitor_sets: list | None = None,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    payload = build_teams_message_card(absolute_rows, relative_rows, as_of_date, webhook_url=webhook_url)
+    payload = build_teams_message_card(absolute_rows, relative_rows, as_of_date, webhook_url=webhook_url, competitor_sets=competitor_sets)
     http = session or requests.Session()
     response = http.post(webhook_url, json=payload, timeout=20)
     if response.status_code >= 400:

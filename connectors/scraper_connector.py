@@ -686,6 +686,7 @@ def _parse_vanguard_distribution_history(payload: dict) -> pd.DataFrame:
             float(detail.get("distributionAmount") or 0.0)
             for detail in item.get("taxDetails") or []
             if detail.get("distributionLevelCode") == "ACTL"
+            and (detail.get("distributionType") or {}).get("distCode") == "CASH"
         )
         if distribution == 0.0:
             continue

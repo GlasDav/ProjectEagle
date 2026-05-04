@@ -5,7 +5,30 @@ from pathlib import Path
 import pandas as pd
 from openpyxl import load_workbook
 
-from output import build_html_report, build_plaintext_report, build_rich_table, export_to_excel
+from output import _build_html_table, build_html_report, build_plaintext_report, build_rich_table, export_to_excel
+
+
+def _ranked_rows(count: int = 7):
+    rows = []
+    for index in range(1, count + 1):
+        rows.append(
+            {
+                "Fund": f"Fund {index}",
+                "Style": "Growth",
+                "is_benchmark": False,
+                "is_stale": False,
+                "error": False,
+                "stale_days": 0,
+                "latest_date": None,
+                "MTD": index / 100,
+                "3M": index / 100,
+                "6M": index / 100,
+                "12M": index / 100,
+                "3Y": index / 100,
+                "5Y": index / 100,
+            }
+        )
+    return rows
 
 
 def _sample_rows():
@@ -60,6 +83,48 @@ def _sample_rows():
     return absolute_rows, relative_rows
 
 
+def _competitor_sets():
+    return [
+        {
+            "id": "long_short_funds",
+            "title": "Long-short funds",
+            "rows": [
+                {
+                    "Fund": "S&P/ASX 200 Accumulation",
+                    "Style": "",
+                    "is_benchmark": True,
+                    "is_stale": False,
+                    "error": False,
+                    "stale_days": 0,
+                    "latest_date": None,
+                    "MTD": 0.01,
+                    "3M": 0.02,
+                    "6M": 0.03,
+                    "12M": 0.04,
+                    "3Y": 0.05,
+                    "5Y": 0.06,
+                },
+                {
+                    "Fund": "Sage Capital Equity Plus Fund",
+                    "Style": "Agnostic",
+                    "is_disabled": True,
+                    "disabled_reason": "No durable public historical unit price and distribution feed has been validated.",
+                    "is_stale": False,
+                    "error": False,
+                    "stale_days": 0,
+                    "latest_date": None,
+                    "MTD": None,
+                    "3M": None,
+                    "6M": None,
+                    "12M": None,
+                    "3Y": None,
+                    "5Y": None,
+                },
+            ],
+        }
+    ]
+
+
 def test_build_rich_table_includes_style_column():
     absolute_rows, _ = _sample_rows()
 
@@ -76,6 +141,23 @@ def test_build_html_report_includes_style_column_and_values():
     assert "<th>Style</th>" in html
     assert ">Growth<" in html
     assert "How styles are tracking" in html
+
+
+def test_build_html_table_highlights_top_and_bottom_three_per_period():
+    html = _build_html_table(_ranked_rows(), include_benchmark_marker=False)
+
+    assert html.count('class="pill top-performer"') == 18
+    assert html.count('class="pill bottom-performer"') == 18
+
+
+def test_build_html_report_appends_competitor_set_tables_without_commentary():
+    absolute_rows, relative_rows = _sample_rows()
+
+    html = build_html_report(absolute_rows, relative_rows, pd.Timestamp("2026-03-29"), competitor_sets=_competitor_sets())
+
+    assert "Long-short funds" in html
+    assert "Sage Capital Equity Plus Fund" in html
+    assert "No durable public historical unit price" in html
 
 
 def test_build_plaintext_report_uses_threshold_aware_stale_count():
@@ -148,3 +230,49 @@ def test_export_to_excel_writes_style_column(tmp_path: Path):
     assert absolute_sheet["B1"].value == "Style"
     assert absolute_sheet["B2"].value is None
     assert absolute_sheet["B3"].value == "Growth"
+
+
+def test_export_to_excel_highlights_top_and_bottom_three_per_period(tmp_path: Path):
+    rows = _ranked_rows()
+    output_path = tmp_path / "report.xlsx"
+
+    export_to_excel(rows, rows, pd.Timestamp("2026-03-29"), output_path)
+
+    workbook = load_workbook(output_path)
+    sheet = workbook["Absolute"]
+
+    assert sheet["D2"].font.bold is True
+    assert sheet["D2"].font.color.rgb == "009C0006"
+    assert sheet["D2"].fill.fgColor.rgb == "FFF6DFD9"
+    assert sheet["D8"].font.bold is True
+    assert sheet["D8"].font.color.rgb == "00008000"
+    assert sheet["D8"].fill.fgColor.rgb == "FFDEF1E5"
+
+
+def test_export_to_excel_appends_competitor_set_sheets(tmp_path: Path):
+    absolute_rows, relative_rows = _sample_rows()
+    output_path = tmp_path / "report.xlsx"
+
+    export_to_excel(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        output_path,
+        competitor_sets=_competitor_sets(),
+    )
+
+    workbook = load_workbook(output_path)
+    sheet = workbook["Long-short funds"]
+
+    assert sheet["A2"].value == "S&P/ASX 200 Accumulation"
+    assert sheet["A3"].value == "Sage Capital Equity Plus Fund"
+    assert "No durable public" in sheet["J3"].value
+
+
+def test_build_plaintext_report_appends_competitor_set_table():
+    absolute_rows, relative_rows = _sample_rows()
+
+    report = build_plaintext_report(absolute_rows, relative_rows, pd.Timestamp("2026-03-29"), competitor_sets=_competitor_sets())
+
+    assert "Long-short funds:" in report
+    assert "Sage Capital Equity Plus Fund" in report
