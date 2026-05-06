@@ -156,6 +156,86 @@ def _to_float(series: pd.Series) -> pd.Series:
     return pd.to_numeric(cleaned, errors="coerce")
 
 
+def _normalize_column_name(value: object) -> str:
+    return re.sub(r"\s+", " ", str(value).replace("\xa0", " ")).strip()
+
+
+def _resolve_column(frame: pd.DataFrame, requested_column: str, source_label: str) -> str:
+    normalized_request = _normalize_column_name(requested_column).casefold()
+    for column in frame.columns:
+        if _normalize_column_name(column).casefold() == normalized_request:
+            return column
+    raise ConnectorValidationError(f"{source_label} is missing required column '{requested_column}'.")
+
+
+def _apply_configured_price_scaling(
+    price_frame: pd.DataFrame,
+    distribution_frame: pd.DataFrame,
+    fund_config: dict,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    cutoff = fund_config.get("price_scale_before_date")
+    factor_value = fund_config.get("price_scale_before_factor")
+    if not cutoff or factor_value in (None, ""):
+        return price_frame.copy(), distribution_frame.copy()
+
+    try:
+        factor = float(factor_value)
+    except (TypeError, ValueError) as exc:
+        raise ConnectorValidationError("price_scale_before_factor must be numeric.") from exc
+    if factor <= 0:
+        raise ConnectorValidationError("price_scale_before_factor must be positive.")
+
+    cutoff_date = pd.Timestamp(cutoff)
+    prices = price_frame.copy()
+    distributions = distribution_frame.copy()
+
+    if "date" in prices.columns and "nav" in prices.columns:
+        price_dates = pd.to_datetime(prices["date"], errors="coerce")
+        price_mask = price_dates < cutoff_date
+        prices.loc[price_mask, "nav"] = pd.to_numeric(prices.loc[price_mask, "nav"], errors="coerce") * factor
+
+    if "date" in distributions.columns and "distribution" in distributions.columns:
+        distribution_dates = pd.to_datetime(distributions["date"], errors="coerce")
+        distribution_mask = distribution_dates < cutoff_date
+        distributions.loc[distribution_mask, "distribution"] = (
+            pd.to_numeric(distributions.loc[distribution_mask, "distribution"], errors="coerce") * factor
+        )
+
+    return prices, distributions
+
+
+def _parse_channelcapital_unit_price_csv(
+    csv_text: str,
+    price_field: str,
+    distribution_field: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    frame = pd.read_csv(StringIO(csv_text))
+    frame.columns = [_normalize_column_name(column) for column in frame.columns]
+
+    date_column = next((column for column in frame.columns if _normalize_column_name(column).casefold() == "date"), None)
+    if date_column is None:
+        raise ConnectorValidationError("Channel Capital unit price CSV is missing required column 'Date'.")
+    price_column = _resolve_column(frame, price_field, "Channel Capital unit price CSV")
+    distribution_column = _resolve_column(frame, distribution_field, "Channel Capital unit price CSV")
+
+    prices = pd.DataFrame(
+        {
+            "date": pd.to_datetime(frame[date_column], errors="coerce"),
+            "nav": _to_float(frame[price_column]),
+        }
+    ).dropna(subset=["date", "nav"])
+
+    distributions = pd.DataFrame(
+        {
+            "date": pd.to_datetime(frame[date_column], errors="coerce"),
+            "distribution": _to_float(frame[distribution_column]),
+        }
+    ).dropna(subset=["date"])
+    distributions = distributions[distributions["distribution"].fillna(0.0) > 0.0]
+
+    return prices, distributions
+
+
 def _extract_pdf_text(content: bytes) -> str:
     try:
         from pypdf import PdfReader
@@ -1750,6 +1830,35 @@ def scrape_airlie_downloads(
     return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
 
 
+@register_scraper("channelcapital_google_csv")
+def scrape_channelcapital_google_csv(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    unit_prices_url = fund_config.get("unit_prices_url") or url
+    if not unit_prices_url:
+        raise ConnectorValidationError("channelcapital_google_csv scraper requires 'unit_prices_url' or 'url'.")
+
+    response = _get_with_retry(session, unit_prices_url, timeout=15)
+    prices, distributions = _parse_channelcapital_unit_price_csv(
+        response.text,
+        price_field=fund_config.get("price_field", "Redemption Price ($)"),
+        distribution_field=fund_config.get("distribution_field", "Distribution ($)"),
+    )
+    prices, distributions = _apply_configured_price_scaling(prices, distributions, fund_config)
+
+    return _merge_prices_and_distributions(
+        prices,
+        distributions,
+        start_date,
+        end_date,
+        distribution_timing=fund_config.get("distribution_timing", "same_date"),
+    )
+
+
 @register_scraper("firetrail_wpdatatable")
 def scrape_firetrail_wpdatatable(
     url: str,
@@ -1781,6 +1890,7 @@ def scrape_firetrail_wpdatatable(
             "distribution": _to_float(table.get(distribution_column, pd.Series(index=table.index, dtype="object"))),
         }
     )
+    prices, distributions = _apply_configured_price_scaling(prices, distributions, fund_config)
 
     return _merge_prices_and_distributions(
         prices,

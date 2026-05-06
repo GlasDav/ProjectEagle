@@ -5,6 +5,7 @@ import pytest
 
 from connectors.scraper_connector import (
     _align_distributions_to_next_price_date,
+    _apply_configured_price_scaling,
     _build_allan_gray_fact_sheet_candidates,
     _build_airlie_price_and_distribution_frames,
     _build_chester_price_and_distribution_frames,
@@ -26,6 +27,7 @@ from connectors.scraper_connector import (
     _parse_katana_annual_distributions,
     _parse_katana_daily_price,
     _parse_katana_monthly_prices,
+    _parse_channelcapital_unit_price_csv,
     _merge_prices_and_distributions,
     _parse_allan_gray_fact_sheet_distributions,
     _parse_eqt_historical_prices_page,
@@ -101,6 +103,52 @@ def test_merge_prices_and_distributions_supports_next_price_date_timing():
     )
 
     assert merged["distribution"].tolist() == [0.0, 10.0, 0.0]
+
+
+def test_apply_configured_price_scaling_scales_rows_before_cutoff_only():
+    prices = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2026-01-21", "2026-01-22"]),
+            "nav": [1.2491, 11.2918],
+        }
+    )
+    distributions = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2026-01-02", "2026-07-01"]),
+            "distribution": [0.00156426, 0.013925],
+        }
+    )
+
+    scaled_prices, scaled_distributions = _apply_configured_price_scaling(
+        prices,
+        distributions,
+        {
+            "price_scale_before_date": "2026-01-22",
+            "price_scale_before_factor": 10,
+        },
+    )
+
+    assert scaled_prices["nav"].tolist() == pytest.approx([12.491, 11.2918])
+    assert scaled_distributions["distribution"].tolist() == pytest.approx([0.0156426, 0.013925])
+    assert prices["nav"].tolist() == [1.2491, 11.2918]
+
+
+def test_parse_channelcapital_unit_price_csv_handles_price_and_distribution_columns():
+    csv_text = """Date ,Application Price ($) ,NAV Price ($) ,Redemption Price ($) ,Distribution ($) ,Fund Growth of $10,000
+2026-01-02,1.1123,1.1090,1.1056,,10000
+2026-01-05,1.1234,1.1201,1.1168,0.0123,10100
+"""
+
+    prices, distributions = _parse_channelcapital_unit_price_csv(
+        csv_text,
+        price_field="Redemption Price ($)",
+        distribution_field="Distribution ($)",
+    )
+
+    assert prices["date"].dt.strftime("%Y-%m-%d").tolist() == ["2026-01-02", "2026-01-05"]
+    assert prices["nav"].tolist() == pytest.approx([1.1056, 1.1168])
+    assert distributions["date"].dt.strftime("%Y-%m-%d").tolist() == ["2026-01-05"]
+    assert distributions["distribution"].tolist() == pytest.approx([0.0123])
 
 
 def test_build_airlie_price_and_distribution_frames_uses_ex_rows():

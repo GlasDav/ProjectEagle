@@ -75,28 +75,37 @@ funds:
     aliases:
       - "Firetrail Alpha Plus (FIRE ETF)"
     default_report: false
-    source: yfinance
-    ticker: "FIRE.AX"
+    source: scraper
+    scraper_id: "firetrail_wpdatatable"
+    url: "https://firetrail.com/funds/firetrail-alpha-plus-fund-complex-etf/"
+    table_desc_id: "table_2_desc"
+    price_field: "Exit Price"
+    distribution_field: "Distribution"
+    distribution_timing: next_price_date
+    price_scale_before_date: "2026-01-22"
+    price_scale_before_factor: 9.03995
     style: agnostic
-    nav_type: adjusted_close
+    nav_type: ex_distribution
 
   - name: "Ten Cap Alpha Plus Complex ETF"
     aliases:
       - "Ten Cap Alpha Plus Complex ETF (ASX:TCAP)"
+    enabled: false
     default_report: false
+    disabled_reason: "No public daily price/distribution history feed found; ASX TCAP.AX history is too short."
     source: yfinance
     ticker: "TCAP.AX"
     style: agnostic
     nav_type: adjusted_close
 
   - name: "Sage Capital Equity Plus Fund"
-    enabled: false
     default_report: false
-    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
     apir_code: "CHN8862AU"
     source: scraper
-    scraper_id: "example_manager"
-    url: ""
+    scraper_id: "channelcapital_google_csv"
+    unit_prices_url: "https://docs.google.com/spreadsheets/d/17qxcmLUr_T7awnPUJE-sxTYabIEjtqRg1sk0iBcQVsg/gviz/tq?tqx=out:csv&sheet=Data"
+    price_field: "Redemption Price ($)"
+    distribution_field: "Distribution ($)"
     style: agnostic
     nav_type: ex_distribution
 
@@ -195,7 +204,7 @@ funds:
   - name: "Regal Australian Long Short Equity Fund"
     enabled: false
     default_report: false
-    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    disabled_reason: "No public daily price/distribution history feed found on Regal materials."
     source: scraper
     scraper_id: "example_manager"
     url: ""
@@ -205,7 +214,7 @@ funds:
   - name: "Acadian Australian Equity Long Short Fund"
     enabled: false
     default_report: false
-    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    disabled_reason: "No public daily price/distribution history feed found; CFS exposes performance/current-price tables."
     apir_code: "FSF3982AU"
     aliases:
       - "Acadian Aust Equity Long Short Class A"
@@ -216,22 +225,22 @@ funds:
     nav_type: ex_distribution
 
   - name: "Vinva Australian Equity Alpha Extension Fund"
-    enabled: false
     default_report: false
-    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
     apir_code: "MGE6468AU"
     aliases:
       - "Vinva Australian Alpha Extension Fund"
     source: scraper
-    scraper_id: "example_manager"
-    url: ""
+    scraper_id: "airlie_downloads"
+    url: "https://magellaninvestmentpartners.com/funds/vinva-australian-alpha-extension-fund/"
+    fund_class: "A"
+    price_field: "Exit"
     style: agnostic
     nav_type: ex_distribution
 
   - name: "Acadian Wholesale Australian Market Neutral Fund"
     enabled: false
     default_report: false
-    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    disabled_reason: "No public daily price/distribution history feed found for this class."
     apir_code: "FSF1674AU"
     aliases:
       - "Acadian Market Neutral Fund"
@@ -243,21 +252,21 @@ funds:
     nav_type: ex_distribution
 
   - name: "Sage Capital Absolute Return Fund"
-    enabled: false
     default_report: false
-    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
     aliases:
       - "Sage Market Neutral Fund"
     source: scraper
-    scraper_id: "example_manager"
-    url: ""
+    scraper_id: "channelcapital_google_csv"
+    unit_prices_url: "https://docs.google.com/spreadsheets/d/1UItzts4sr-wz93uq-KqUyLHSGeycnWL8T3fh2Jjom9A/gviz/tq?tqx=out:csv&sheet=Data"
+    price_field: "Redemption Price ($)"
+    distribution_field: "Distribution ($)"
     style: agnostic
     nav_type: ex_distribution
 
   - name: "Regal Tasman Market Neutral Fund"
     enabled: false
     default_report: false
-    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    disabled_reason: "No public daily price/distribution history feed found on Regal materials."
     apir_code: "RGL0001AU"
     aliases:
       - "Regal Tasman Fund"
@@ -270,7 +279,7 @@ funds:
   - name: "Bennelong Market Neutral Fund"
     enabled: false
     default_report: false
-    disabled_reason: "No durable public historical unit price and distribution feed has been validated."
+    disabled_reason: "Official page says to email for daily prices; no public history feed."
     apir_code: "BFL0016AU"
     aliases:
       - "Bennelong Market Neutral"

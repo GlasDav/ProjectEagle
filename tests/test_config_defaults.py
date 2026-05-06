@@ -54,18 +54,19 @@ def test_live_config_declares_requested_competitor_sets_and_keeps_peer_only_fund
     default_names = {fund["name"] for fund in config["funds"] if is_default_report_fund(fund)}
     assert "Firetrail Alpha Plus Fund Complex ETF" not in default_names
     assert "Ten Cap Alpha Plus Complex ETF" not in default_names
+    assert "Sage Capital Equity Plus Fund" not in default_names
     assert "Perpetual SHARE-PLUS Long-Short Fund" not in default_names
+    assert "Vinva Australian Equity Alpha Extension Fund" not in default_names
+    assert "Sage Capital Absolute Return Fund" not in default_names
 
     disabled_peer_funds = [
         fund
         for fund in config["funds"]
         if fund["name"] in {
-            "Sage Capital Equity Plus Fund",
+            "Ten Cap Alpha Plus Complex ETF",
             "Regal Australian Long Short Equity Fund",
             "Acadian Australian Equity Long Short Fund",
-            "Vinva Australian Equity Alpha Extension Fund",
             "Acadian Wholesale Australian Market Neutral Fund",
-            "Sage Capital Absolute Return Fund",
             "Regal Tasman Market Neutral Fund",
             "Bennelong Market Neutral Fund",
         }
