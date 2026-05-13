@@ -20,6 +20,7 @@ competitor_sets:
     title: "Market neutral funds"
     funds:
       - "Acadian Wholesale Australian Market Neutral Fund"
+      - "Firetrail Absolute Return Fund"
       - "Sage Capital Absolute Return Fund"
       - "Regal Tasman Market Neutral Fund"
       - "Bennelong Market Neutral Fund"
@@ -84,6 +85,19 @@ funds:
     distribution_timing: next_price_date
     price_scale_before_date: "2026-01-22"
     price_scale_before_factor: 9.03995
+    style: agnostic
+    nav_type: ex_distribution
+
+  - name: "Firetrail Absolute Return Fund"
+    default_report: false
+    apir_code: "WHT5134AU"
+    source: scraper
+    scraper_id: "firetrail_wpdatatable"
+    url: "https://firetrail.com/funds/firetrail-absolute-return-fund/#upd"
+    table_desc_id: "table_2_desc"
+    price_field: "Exit Price"
+    distribution_field: "Distribution"
+    distribution_timing: next_price_date
     style: agnostic
     nav_type: ex_distribution
 

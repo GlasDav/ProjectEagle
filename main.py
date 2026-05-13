@@ -138,7 +138,11 @@ def get_connector(source: str):
 
 
 def build_identifier(config: dict[str, Any]) -> str:
-    return config.get("ticker") or config.get("scraper_id") or config.get("file") or config["name"].replace(" ", "_").lower()
+    if config.get("source") == "scraper":
+        scraper_id = str(config.get("scraper_id") or "scraper").strip()
+        fund_name = str(config["name"]).strip().replace(" ", "_").lower()
+        return f"{scraper_id}_{fund_name}"
+    return config.get("ticker") or config.get("file") or config["name"].replace(" ", "_").lower()
 
 
 def format_style_label(style: Any) -> str:

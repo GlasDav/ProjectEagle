@@ -59,6 +59,10 @@ def _row_is_stale(row: dict) -> bool:
     return bool(row.get("is_stale", row.get("stale_days", 0) > 0))
 
 
+def _is_firetrail(row: dict) -> bool:
+    return str(row.get("Fund", "")).casefold().startswith("firetrail ")
+
+
 def _average_by_style(rows: list[dict], period: str) -> list[dict[str, object]]:
     grouped: dict[str, list[float]] = {}
     for row in rows:
@@ -178,12 +182,33 @@ def render_tables(
     console.print(build_rich_table(relative_rows, f"Relative Total Return Performance ({as_of_date:%Y-%m-%d})"))
     for competitor_set in competitor_sets:
         console.print()
-        console.print(build_rich_table(_competitor_set_rows(competitor_set), f"{_competitor_set_title(competitor_set)} ({as_of_date:%Y-%m-%d})"))
+        console.print(
+            build_rich_table(
+                _competitor_set_rows(competitor_set),
+                f"{_competitor_set_title(competitor_set)} ({as_of_date:%Y-%m-%d})",
+                top_n=1,
+                bottom_n=1,
+                include_benchmark=False,
+            )
+        )
 
 
-def build_rich_table(rows: list[dict], title: str) -> Table:
+def build_rich_table(
+    rows: list[dict],
+    title: str,
+    *,
+    top_n: int = 3,
+    bottom_n: int = 3,
+    include_benchmark: bool = True,
+) -> Table:
     table = Table(title=title)
-    highlights = build_period_highlights(rows, periods=PERIODS)
+    highlights = build_period_highlights(
+        rows,
+        periods=PERIODS,
+        top_n=top_n,
+        bottom_n=bottom_n,
+        include_benchmark=include_benchmark,
+    )
     table.add_column("Fund", style="bold")
     table.add_column("Style")
     for period in PERIODS:
@@ -195,6 +220,8 @@ def build_rich_table(rows: list[dict], title: str) -> Table:
         if row.get("is_benchmark"):
             label = f"[bold]{label}[/bold]"
         if row.get("is_average"):
+            label = f"[bold]{label}[/bold]"
+        if _is_firetrail(row):
             label = f"[bold]{label}[/bold]"
         if row.get("is_disabled"):
             label = f"{label} [yellow]({row.get('disabled_reason') or 'Source pending'})[/yellow]"
@@ -781,7 +808,7 @@ def _build_competitor_set_sections_html(competitor_sets: list) -> str:
       <p class="insight-kicker">Competitor set</p>
       <h2>{escape(title)}</h2>
       <div class="table-wrap">
-        {_build_html_table(rows, include_benchmark_marker=True)}
+        {_build_html_table(rows, include_benchmark_marker=True, top_n=1, bottom_n=1, include_benchmark_highlight=False)}
       </div>
     </section>
             """
@@ -789,8 +816,21 @@ def _build_competitor_set_sections_html(competitor_sets: list) -> str:
     return "".join(sections)
 
 
-def _build_html_table(rows: list[dict], include_benchmark_marker: bool) -> str:
-    highlights = build_period_highlights(rows, periods=PERIODS)
+def _build_html_table(
+    rows: list[dict],
+    include_benchmark_marker: bool,
+    *,
+    top_n: int = 3,
+    bottom_n: int = 3,
+    include_benchmark_highlight: bool = True,
+) -> str:
+    highlights = build_period_highlights(
+        rows,
+        periods=PERIODS,
+        top_n=top_n,
+        bottom_n=bottom_n,
+        include_benchmark=include_benchmark_highlight,
+    )
     header_cells = "".join(
         f"<th>{escape(f'{period} (p.a.)' if period in {'3Y', '5Y'} else period)}</th>" for period in PERIODS
     )
@@ -802,6 +842,8 @@ def _build_html_table(rows: list[dict], include_benchmark_marker: bool) -> str:
             row_classes.append("benchmark-row")
         if row.get("is_average"):
             row_classes.append("summary-row")
+        if _is_firetrail(row):
+            row_classes.append("firetrail-row")
         latest_date = row.get("latest_date")
         stale_meta = ""
         if _row_is_stale(row):
@@ -905,14 +947,25 @@ def export_to_excel(
     top_fill = PatternFill(fill_type="solid", fgColor="FFDEF1E5")
     bottom_fill = PatternFill(fill_type="solid", fgColor="FFF6DFD9")
     for sheet_name in rows_by_sheet:
-        highlights = build_period_highlights(rows_by_sheet[sheet_name], periods=PERIODS)
+        top_n = 1 if sheet_name not in {"Absolute", "Relative"} else 3
+        bottom_n = 1 if sheet_name not in {"Absolute", "Relative"} else 3
+        highlights = build_period_highlights(
+            rows_by_sheet[sheet_name],
+            periods=PERIODS,
+            top_n=top_n,
+            bottom_n=bottom_n,
+            include_benchmark=sheet_name in {"Absolute", "Relative"},
+        )
         worksheet = workbook[sheet_name]
         worksheet["A1"].font = Font(bold=True)
         header_to_column = {worksheet.cell(row=1, column=index).value: index for index in range(1, worksheet.max_column + 1)}
         period_start_column = header_to_column.get(PERIODS[0], worksheet.max_column)
 
-        for data_row_index, row in enumerate(worksheet.iter_rows(min_col=period_start_column, min_row=2), start=0):
-            for cell in row:
+        for data_row_index, row in enumerate(worksheet.iter_rows(min_row=2), start=0):
+            source_row = rows_by_sheet[sheet_name][data_row_index]
+            if _is_firetrail(source_row):
+                row[0].font = Font(bold=True)
+            for cell in row[period_start_column - 1 :]:
                 if isinstance(cell.value, (int, float)):
                     cell.number_format = "0.0%"
                     header = worksheet.cell(row=1, column=cell.column).value

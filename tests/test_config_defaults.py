@@ -46,6 +46,7 @@ def test_live_config_declares_requested_competitor_sets_and_keeps_peer_only_fund
     ]
     assert competitor_sets["market_neutral_funds"]["funds"] == [
         "Acadian Wholesale Australian Market Neutral Fund",
+        "Firetrail Absolute Return Fund",
         "Sage Capital Absolute Return Fund",
         "Regal Tasman Market Neutral Fund",
         "Bennelong Market Neutral Fund",
@@ -57,6 +58,7 @@ def test_live_config_declares_requested_competitor_sets_and_keeps_peer_only_fund
     assert "Sage Capital Equity Plus Fund" not in default_names
     assert "Perpetual SHARE-PLUS Long-Short Fund" not in default_names
     assert "Vinva Australian Equity Alpha Extension Fund" not in default_names
+    assert "Firetrail Absolute Return Fund" not in default_names
     assert "Sage Capital Absolute Return Fund" not in default_names
 
     disabled_peer_funds = [

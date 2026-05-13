@@ -31,6 +31,33 @@ def _ranked_rows(count: int = 7):
     return rows
 
 
+def _firetrail_rows():
+    rows = _ranked_rows(3)
+    rows[0]["Fund"] = "Firetrail High Conviction Fund"
+    rows[1]["Fund"] = "Firetrail Alpha Plus Fund Complex ETF"
+    rows[2]["Fund"] = "Other Fund"
+    return rows
+
+
+def _ranked_rows_with_high_benchmark():
+    benchmark = {
+        "Fund": "S&P/ASX 200 Accumulation",
+        "Style": "",
+        "is_benchmark": True,
+        "is_stale": False,
+        "error": False,
+        "stale_days": 0,
+        "latest_date": None,
+        "MTD": 0.99,
+        "3M": 0.99,
+        "6M": 0.99,
+        "12M": 0.99,
+        "3Y": 0.99,
+        "5Y": 0.99,
+    }
+    return [benchmark, *_ranked_rows()]
+
+
 def _sample_rows():
     absolute_rows = [
         {
@@ -150,6 +177,17 @@ def test_build_html_table_highlights_top_and_bottom_three_per_period():
     assert html.count('class="pill bottom-performer"') == 18
 
 
+def test_build_html_report_competitor_sets_highlight_only_best_and_worst_per_period():
+    absolute_rows, relative_rows = _sample_rows()
+    competitor_sets = [{"id": "competitors", "title": "Competitors", "rows": _ranked_rows()}]
+
+    html = build_html_report(absolute_rows, relative_rows, pd.Timestamp("2026-03-29"), competitor_sets=competitor_sets)
+    competitor_html = html.split('<section class="table-card" id="competitors">', 1)[1]
+
+    assert competitor_html.count('class="pill top-performer"') == 6
+    assert competitor_html.count('class="pill bottom-performer"') == 6
+
+
 def test_build_html_report_appends_competitor_set_tables_without_commentary():
     absolute_rows, relative_rows = _sample_rows()
 
@@ -247,6 +285,65 @@ def test_export_to_excel_highlights_top_and_bottom_three_per_period(tmp_path: Pa
     assert sheet["D8"].font.bold is True
     assert sheet["D8"].font.color.rgb == "00008000"
     assert sheet["D8"].fill.fgColor.rgb == "FFDEF1E5"
+
+
+def test_export_to_excel_competitor_sets_highlight_only_best_and_worst_per_period(tmp_path: Path):
+    absolute_rows, relative_rows = _sample_rows()
+    output_path = tmp_path / "report.xlsx"
+
+    export_to_excel(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        output_path,
+        competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows()}],
+    )
+
+    workbook = load_workbook(output_path)
+    sheet = workbook["Competitors"]
+
+    assert sheet["D2"].font.bold is True
+    assert sheet["D2"].fill.fgColor.rgb == "FFF6DFD9"
+    assert sheet["D3"].font.bold is False
+    assert sheet["D7"].font.bold is False
+    assert sheet["D8"].font.bold is True
+    assert sheet["D8"].fill.fgColor.rgb == "FFDEF1E5"
+
+
+def test_export_to_excel_competitor_set_highlights_ignore_benchmark_row(tmp_path: Path):
+    absolute_rows, relative_rows = _sample_rows()
+    output_path = tmp_path / "report.xlsx"
+
+    export_to_excel(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        output_path,
+        competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows_with_high_benchmark()}],
+    )
+
+    workbook = load_workbook(output_path)
+    sheet = workbook["Competitors"]
+
+    assert sheet["D2"].value == 0.99
+    assert sheet["D2"].font.bold is False
+    assert sheet["D2"].fill.fgColor.rgb == "00000000"
+    assert sheet["D3"].fill.fgColor.rgb == "FFF6DFD9"
+    assert sheet["D9"].fill.fgColor.rgb == "FFDEF1E5"
+
+
+def test_export_to_excel_bolds_all_firetrail_fund_rows(tmp_path: Path):
+    rows = _firetrail_rows()
+    output_path = tmp_path / "report.xlsx"
+
+    export_to_excel(rows, rows, pd.Timestamp("2026-03-29"), output_path)
+
+    workbook = load_workbook(output_path)
+    sheet = workbook["Absolute"]
+
+    assert sheet["A2"].font.bold is True
+    assert sheet["A3"].font.bold is True
+    assert sheet["A4"].font.bold is False
 
 
 def test_export_to_excel_appends_competitor_set_sheets(tmp_path: Path):

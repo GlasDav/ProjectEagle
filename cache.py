@@ -29,11 +29,13 @@ def load_cached_frame(source: str, identifier: str, cache_date: pd.Timestamp | N
         return None
 
     frame = pd.read_parquet(path)
-    if "date" in frame.columns:
-        frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
-        frame = frame.set_index("date")
+    date_column = next((column for column in frame.columns if str(column).casefold() == "date"), None)
+    if date_column is not None:
+        frame[date_column] = pd.to_datetime(frame[date_column], errors="coerce")
+        frame = frame.set_index(date_column)
     if not isinstance(frame.index, pd.DatetimeIndex):
         frame.index = pd.to_datetime(frame.index, errors="coerce")
+    frame.index.name = "date"
     return frame.sort_index()
 
 
@@ -41,6 +43,7 @@ def save_cached_frame(frame: pd.DataFrame, source: str, identifier: str, cache_d
     path = cache_path(source, identifier, cache_date=cache_date)
     serializable = frame.copy()
     serializable.index = pd.to_datetime(serializable.index)
-    serializable = serializable.reset_index().rename(columns={"index": "date"})
+    serializable.index.name = "date"
+    serializable = serializable.reset_index()
     serializable.to_parquet(path, index=False)
     return path

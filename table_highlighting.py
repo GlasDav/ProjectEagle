@@ -15,14 +15,16 @@ def build_period_highlights(
     periods: Sequence[str],
     top_n: int = 3,
     bottom_n: int = 3,
+    include_benchmark: bool = True,
 ) -> dict[tuple[int, str], PerformanceHighlight]:
     """Return per-cell top/bottom performance highlights for rendered tables.
 
     Highlights are calculated independently for each period over valid rendered
     performance rows. Average/summary rows are excluded so they do not consume a
-    top/bottom slot; benchmark rows remain eligible when they are part of the
-    rendered table. If a very small table causes top and bottom selections to
-    overlap, the top highlight wins.
+    top/bottom slot. Benchmark rows remain eligible by default when they are part
+    of the rendered table, but callers can exclude them for mixed-basis tables.
+    If a very small table causes top and bottom selections to overlap, the top
+    highlight wins.
     """
 
     highlights: dict[tuple[int, str], PerformanceHighlight] = {}
@@ -30,7 +32,7 @@ def build_period_highlights(
     for period in periods:
         values: list[tuple[int, float, str]] = []
         for index, row in enumerate(rows):
-            if row.get("is_average") or row.get("error"):
+            if row.get("is_average") or row.get("error") or (row.get("is_benchmark") and not include_benchmark):
                 continue
             value = row.get(period)
             if value is None:

@@ -5,9 +5,9 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 ## As Of May 6, 2026
 
 - Benchmark: S&P/ASX 200 Accumulation via `^AXJT`
-- Live funds: 29
+- Live funds: 30
 - Disabled funds/placeholders: 26
-- Live source mix: 29 scraper-backed `ex_distribution` funds
+- Live source mix: 30 scraper-backed `ex_distribution` funds
 
 ## Active Invariants
 
@@ -110,6 +110,8 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 ### Peer-set scraper repair
 
 - Firetrail Alpha Plus Fund Complex ETF now reads Firetrail's public unit-price table rather than ASX adjusted closes. The source changed unit scale before ASX quotation, so rows before `2026-01-22` are scaled by `9.03995` to keep the TRI series continuous.
+- Firetrail Absolute Return Fund now uses the same Firetrail public unit-price table family, with exit price plus inline distributions.
+- Scraper cache keys now include the fund identity as well as the scraper family, so peer-set funds sharing a scraper implementation do not reuse another fund's cached rows.
 - Sage Capital Equity Plus Fund and Sage Capital Absolute Return Fund now use Channel Capital's public Google-Sheet CSV feeds with explicit dollar distributions.
 - Vinva Australian Equity Alpha Extension Fund now uses the public Magellan/Vinva price-history workbook and derives distributions from workbook `ex` rows through the existing Airlie-style parser.
 - Ten Cap Alpha Plus Complex ETF, Regal Australian Long Short Equity Fund, Acadian Australian Equity Long Short Fund, Acadian Wholesale Australian Market Neutral Fund, Regal Tasman Market Neutral Fund, and Bennelong Market Neutral Fund remain disabled because no durable unauthenticated daily unit-price and distribution history feed has been validated. Bennelong's official page explicitly directs users to email Client Experience for daily unit-price information.
@@ -146,6 +148,7 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Macquarie Australian Shares
 - Paradice Australian Equities
 - Firetrail Alpha Plus Fund Complex ETF
+- Firetrail Absolute Return Fund
 - Sage Capital Equity Plus Fund
 - Perpetual SHARE-PLUS Long-Short Fund
 - Vinva Australian Equity Alpha Extension Fund
@@ -155,7 +158,7 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 - Legacy placeholders carried forward from earlier source work: Regal Australian Long Short Equity Fund, L1 Capital Catalyst Fund, Northcape Core, and Auscap High Conviction.
 - Firetrail competitor-sheet placeholders awaiting durable public sources: Schroder Australian Equity Fund, Chester Opportunities Fund, Martin Currie Australia Value Equity, and AB Concentrated Australian Equities.
-- Peer-set appendices are configured for long-short and market-neutral competitors. Firetrail Alpha Plus, Sage Equity Plus, Perpetual SHARE-PLUS, Vinva Alpha Extension, and Sage Absolute Return have computable public scraper sources; Ten Cap, Regal, Acadian, and Bennelong market-neutral peers remain disabled placeholders until durable public history is validated.
+- Peer-set appendices are configured for long-short and market-neutral competitors. Firetrail Alpha Plus, Firetrail Absolute Return, Sage Equity Plus, Perpetual SHARE-PLUS, Vinva Alpha Extension, and Sage Absolute Return have computable public scraper sources; Ten Cap, Regal, Acadian, and Bennelong market-neutral peers remain disabled placeholders until durable public history is validated.
 - Selector High Conviction Equity Fund is disabled because the public source mapping appears wrong.
 - Vanguard Australian Shares Index is disabled because it closely tracks the benchmark index; its Vanguard API distribution parser now uses the `CASH` tax detail only rather than summing taxable components.
 - Smallco Broadcap, Investors Mutual Australian Share Fund, RQI Australian Value (formerly Realindex), First Sentier FSI Geared Australian Share Fund, Dimensional Australian Value, and Dimensional Aust Core Equity are represented in config but removed from the default report list.

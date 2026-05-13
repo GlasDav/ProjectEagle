@@ -38,7 +38,7 @@ def _format_fund_label(row: dict) -> str:
 
 
 def _is_firetrail(row: dict) -> bool:
-    return str(row.get("Fund", "")).casefold() == "firetrail high conviction fund"
+    return str(row.get("Fund", "")).casefold().startswith("firetrail ")
 
 
 def _is_legacy_connector_webhook(webhook_url: str | None) -> bool:
@@ -85,9 +85,9 @@ def _value_text_block(
 def _format_highlighted_percent(value: float | None, highlight: PerformanceHighlight | None = None) -> str:
     label = _format_percent(value)
     if highlight == HIGHLIGHT_TOP:
-        return f"🟢 {label}"
+        return f"Best {label}"
     if highlight == HIGHLIGHT_BOTTOM:
-        return f"🔴 {label}"
+        return f"Worst {label}"
     return label
 
 
@@ -195,12 +195,24 @@ def _legacy_fund_label(row: dict) -> str:
     if row.get("is_benchmark"):
         return f"**{label}**"
     if _is_firetrail(row):
-        return f"🟢 **{label}**"
+        return f"**{label}**"
     return label
 
 
-def _build_plaintext_table(rows: list[dict]) -> str:
-    highlights = build_period_highlights(rows, periods=PERIODS)
+def _build_plaintext_table(
+    rows: list[dict],
+    *,
+    top_n: int = 3,
+    bottom_n: int = 3,
+    include_benchmark_highlight: bool = True,
+) -> str:
+    highlights = build_period_highlights(
+        rows,
+        periods=PERIODS,
+        top_n=top_n,
+        bottom_n=bottom_n,
+        include_benchmark=include_benchmark_highlight,
+    )
     headers = ["Fund", "Style", *[f"{period} p.a." if period in {"3Y", "5Y"} else period for period in PERIODS]]
     rendered_rows = []
     for row_index, row in enumerate(rows):
@@ -246,9 +258,21 @@ def _competitor_set_rows(competitor_set) -> list[dict]:
     return list(getattr(competitor_set, "rows", []) or [])
 
 
-def _build_adaptive_table(rows_source: list[dict]) -> dict[str, Any]:
+def _build_adaptive_table(
+    rows_source: list[dict],
+    *,
+    top_n: int = 3,
+    bottom_n: int = 3,
+    include_benchmark_highlight: bool = True,
+) -> dict[str, Any]:
     headers = ["Fund", "Style", *[f"{period} (p.a.)" if period in {"3Y", "5Y"} else period for period in PERIODS]]
-    highlights = build_period_highlights(rows_source, periods=PERIODS)
+    highlights = build_period_highlights(
+        rows_source,
+        periods=PERIODS,
+        top_n=top_n,
+        bottom_n=bottom_n,
+        include_benchmark=include_benchmark_highlight,
+    )
     table_rows = [
         {
             "type": "TableRow",
@@ -304,7 +328,14 @@ def _adaptive_competitor_set_blocks(competitor_sets: list | None) -> list[dict[s
     blocks: list[dict[str, Any]] = []
     for competitor_set in competitor_sets or []:
         blocks.append(_text_block(_competitor_set_title(competitor_set), weight="Bolder", size="Medium"))
-        blocks.append(_build_adaptive_table(_competitor_set_rows(competitor_set)))
+        blocks.append(
+            _build_adaptive_table(
+                _competitor_set_rows(competitor_set),
+                top_n=1,
+                bottom_n=1,
+                include_benchmark_highlight=False,
+            )
+        )
     return blocks
 
 
@@ -457,7 +488,12 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
         sections.append(
             {
                 "title": _competitor_set_title(competitor_set),
-                "text": _build_plaintext_table(_competitor_set_rows(competitor_set)),
+                "text": _build_plaintext_table(
+                    _competitor_set_rows(competitor_set),
+                    top_n=1,
+                    bottom_n=1,
+                    include_benchmark_highlight=False,
+                ),
                 "markdown": True,
             }
         )
