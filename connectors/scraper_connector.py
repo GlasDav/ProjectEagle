@@ -236,6 +236,55 @@ def _parse_channelcapital_unit_price_csv(
     return prices, distributions
 
 
+def _build_cfs_history_download_url(
+    *,
+    main_group: str,
+    group_id: str,
+    product_id: str,
+    start_date: str,
+    end_date: str,
+    download_url: str = "https://www.colonialfirststate.com.au/Price_Performance/Download.aspx",
+) -> str:
+    return _build_url_with_query(
+        download_url,
+        hidDLProductIDs=str(group_id),
+        hidDLFundIDs=str(product_id),
+        hidDLMainGroup=str(main_group),
+        hidDLFromDate=f"{pd.Timestamp(start_date):%d/%m/%Y} 12:00:00 AM",
+        hidDLToDate=f"{pd.Timestamp(end_date):%d/%m/%Y} 12:00:00 AM",
+        hidDLTab="History",
+    )
+
+
+def _parse_cfs_history_csv(csv_text: str, price_field: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if _normalize_column_name(price_field).casefold() != "exit price":
+        raise ConnectorValidationError("CFS history export currently supports 'Exit Price' only.")
+
+    frame = pd.read_csv(
+        StringIO(csv_text),
+        header=None,
+        names=["date", "entry_price", "post_income_exit_price", "exit_price"],
+        usecols=[0, 1, 2, 3],
+    )
+    if frame.empty:
+        raise ConnectorValidationError("CFS history export did not contain any rows.")
+
+    dates = pd.to_datetime(frame["date"], format="%d/%m/%Y", errors="coerce")
+    pre_income_exit = _to_float(frame["exit_price"])
+    post_income_exit = _to_float(frame["post_income_exit_price"])
+    has_post_income_price = post_income_exit.notna() & (post_income_exit > 0) & pre_income_exit.notna()
+
+    nav = pre_income_exit.where(~has_post_income_price, post_income_exit)
+    distributions = (pre_income_exit - post_income_exit).where(has_post_income_price, 0.0)
+
+    prices = pd.DataFrame({"date": dates, "nav": nav}).dropna(subset=["date", "nav"])
+    distribution_rows = pd.DataFrame({"date": dates, "distribution": distributions}).dropna(
+        subset=["date", "distribution"]
+    )
+    distribution_rows = distribution_rows[distribution_rows["distribution"] > 0.0]
+    return prices, distribution_rows
+
+
 def _extract_pdf_text(content: bytes) -> str:
     try:
         from pypdf import PdfReader
@@ -1997,6 +2046,33 @@ def scrape_first_sentier_history_csv(
         history_response.text,
         fund_config.get("price_field", "EXIT PRICE (AUD)"),
     )
+    return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
+
+
+@register_scraper("cfs_historical_unit_prices")
+def scrape_cfs_historical_unit_prices(
+    url: str,
+    start_date: str,
+    end_date: str,
+    fund_config: dict,
+    session: requests.Session,
+) -> pd.DataFrame:
+    main_group = fund_config.get("main_group")
+    group_id = fund_config.get("group_id")
+    product_id = fund_config.get("product_id")
+    if not main_group or not group_id or not product_id:
+        raise ConnectorValidationError("cfs_historical_unit_prices scraper requires main_group, group_id, and product_id.")
+
+    history_url = fund_config.get("history_url") or _build_cfs_history_download_url(
+        main_group=str(main_group),
+        group_id=str(group_id),
+        product_id=str(product_id),
+        start_date=start_date,
+        end_date=end_date,
+        download_url=str(fund_config.get("download_url", "https://www.colonialfirststate.com.au/Price_Performance/Download.aspx")),
+    )
+    history_response = _get_with_retry(session, str(history_url), timeout=20)
+    prices, distributions = _parse_cfs_history_csv(history_response.text, fund_config.get("price_field", "Exit Price"))
     return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
 
 

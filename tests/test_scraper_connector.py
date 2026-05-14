@@ -28,6 +28,7 @@ from connectors.scraper_connector import (
     _parse_katana_daily_price,
     _parse_katana_monthly_prices,
     _parse_channelcapital_unit_price_csv,
+    _parse_cfs_history_csv,
     _merge_prices_and_distributions,
     _parse_allan_gray_fact_sheet_distributions,
     _parse_eqt_historical_prices_page,
@@ -149,6 +150,28 @@ def test_parse_channelcapital_unit_price_csv_handles_price_and_distribution_colu
     assert prices["nav"].tolist() == pytest.approx([1.1056, 1.1168])
     assert distributions["date"].dt.strftime("%Y-%m-%d").tolist() == ["2026-01-05"]
     assert distributions["distribution"].tolist() == pytest.approx([0.0123])
+
+
+def test_parse_cfs_history_csv_uses_post_income_exit_price_and_distribution():
+    csv_text = """
+13/05/2026,1.4276,,1.4233
+11/12/2025,1.4566,1.4260,1.4522
+30/06/2025,1.4758,1.4391,1.4714
+21/03/2026,1.3973,0,1.3931
+""".strip()
+
+    prices, distributions = _parse_cfs_history_csv(csv_text, "Exit Price")
+
+    assert prices.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2026-05-13"), "nav": 1.4233},
+        {"date": pd.Timestamp("2025-12-11"), "nav": 1.4260},
+        {"date": pd.Timestamp("2025-06-30"), "nav": 1.4391},
+        {"date": pd.Timestamp("2026-03-21"), "nav": 1.3931},
+    ]
+    assert distributions.to_dict(orient="records") == [
+        {"date": pd.Timestamp("2025-12-11"), "distribution": pytest.approx(0.0262)},
+        {"date": pd.Timestamp("2025-06-30"), "distribution": pytest.approx(0.0323)},
+    ]
 
 
 def test_build_airlie_price_and_distribution_frames_uses_ex_rows():

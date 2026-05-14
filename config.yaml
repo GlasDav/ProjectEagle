@@ -12,18 +12,14 @@ competitor_sets:
       - "Ten Cap Alpha Plus Complex ETF"
       - "Sage Capital Equity Plus Fund"
       - "Perpetual SHARE-PLUS Long-Short Fund"
-      - "Regal Australian Long Short Equity Fund"
       - "Acadian Australian Equity Long Short Fund"
       - "Vinva Australian Equity Alpha Extension Fund"
 
   - id: market_neutral_funds
     title: "Market neutral funds"
     funds:
-      - "Acadian Wholesale Australian Market Neutral Fund"
       - "Firetrail Absolute Return Fund"
       - "Sage Capital Absolute Return Fund"
-      - "Regal Tasman Market Neutral Fund"
-      - "Bennelong Market Neutral Fund"
 
 funds:
   - name: "Vanguard Australian Shares ETF"
@@ -104,9 +100,7 @@ funds:
   - name: "Ten Cap Alpha Plus Complex ETF"
     aliases:
       - "Ten Cap Alpha Plus Complex ETF (ASX:TCAP)"
-    enabled: false
     default_report: false
-    disabled_reason: "No public daily price/distribution history feed found; ASX TCAP.AX history is too short."
     source: yfinance
     ticker: "TCAP.AX"
     style: agnostic
@@ -226,15 +220,16 @@ funds:
     nav_type: ex_distribution
 
   - name: "Acadian Australian Equity Long Short Fund"
-    enabled: false
     default_report: false
-    disabled_reason: "No public daily price/distribution history feed found; CFS exposes performance/current-price tables."
     apir_code: "FSF3982AU"
     aliases:
       - "Acadian Aust Equity Long Short Class A"
     source: scraper
-    scraper_id: "example_manager"
-    url: ""
+    scraper_id: "cfs_historical_unit_prices"
+    main_group: "WF"
+    group_id: "120"
+    product_id: "75"
+    price_field: "Exit Price"
     style: agnostic
     nav_type: ex_distribution
 

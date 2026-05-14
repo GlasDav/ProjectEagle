@@ -2,12 +2,12 @@
 
 This file is the quick onboarding reference for the live PerfSraper configuration.
 
-## As Of May 6, 2026
+## As Of May 14, 2026
 
 - Benchmark: S&P/ASX 200 Accumulation via `^AXJT`
-- Live funds: 30
-- Disabled funds/placeholders: 26
-- Live source mix: 30 scraper-backed `ex_distribution` funds
+- Live funds: 32
+- Disabled funds/placeholders: 24
+- Live source mix: 31 scraper-backed `ex_distribution` funds, 1 yfinance `adjusted_close` peer-only ETF
 
 ## Active Invariants
 
@@ -114,7 +114,10 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Scraper cache keys now include the fund identity as well as the scraper family, so peer-set funds sharing a scraper implementation do not reuse another fund's cached rows.
 - Sage Capital Equity Plus Fund and Sage Capital Absolute Return Fund now use Channel Capital's public Google-Sheet CSV feeds with explicit dollar distributions.
 - Vinva Australian Equity Alpha Extension Fund now uses the public Magellan/Vinva price-history workbook and derives distributions from workbook `ex` rows through the existing Airlie-style parser.
-- Ten Cap Alpha Plus Complex ETF, Regal Australian Long Short Equity Fund, Acadian Australian Equity Long Short Fund, Acadian Wholesale Australian Market Neutral Fund, Regal Tasman Market Neutral Fund, and Bennelong Market Neutral Fund remain disabled because no durable unauthenticated daily unit-price and distribution history feed has been validated. Bennelong's official page explicitly directs users to email Client Experience for daily unit-price information.
+- Acadian Australian Equity Long Short Fund now reads Colonial First State's public historical unit-price download for Class A (`WF`, group `120`, product `75`). CFS exposes pre-income and post-income exit prices on distribution rows, so the scraper uses the post-income exit price as ex-distribution NAV and reinvests the pre/post difference.
+- Ten Cap Alpha Plus Complex ETF now uses `TCAP.AX` adjusted closes. The public history starts on `2025-11-24`, so 6M, 12M, 3Y, and 5Y output can remain `N/A` until the listed history lengthens.
+- Regal Australian Long Short Equity Fund, Acadian Wholesale Australian Market Neutral Fund, Regal Tasman Market Neutral Fund, and Bennelong Market Neutral Fund remain disabled because no durable unauthenticated daily unit-price and distribution history feed has been validated. Bennelong's official page still directs users to email Client Experience for daily unit-price information.
+- Peer-set appendices now include only source-backed funds; disabled placeholders remain in `config.yaml` for source tracking but are not rendered as all-`N/A` table rows.
 
 ### APIR and Morningstar investigation
 
@@ -148,9 +151,11 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Macquarie Australian Shares
 - Paradice Australian Equities
 - Firetrail Alpha Plus Fund Complex ETF
+- Ten Cap Alpha Plus Complex ETF
 - Firetrail Absolute Return Fund
 - Sage Capital Equity Plus Fund
 - Perpetual SHARE-PLUS Long-Short Fund
+- Acadian Australian Equity Long Short Fund
 - Vinva Australian Equity Alpha Extension Fund
 - Sage Capital Absolute Return Fund
 
@@ -158,7 +163,7 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 - Legacy placeholders carried forward from earlier source work: Regal Australian Long Short Equity Fund, L1 Capital Catalyst Fund, Northcape Core, and Auscap High Conviction.
 - Firetrail competitor-sheet placeholders awaiting durable public sources: Schroder Australian Equity Fund, Chester Opportunities Fund, Martin Currie Australia Value Equity, and AB Concentrated Australian Equities.
-- Peer-set appendices are configured for long-short and market-neutral competitors. Firetrail Alpha Plus, Firetrail Absolute Return, Sage Equity Plus, Perpetual SHARE-PLUS, Vinva Alpha Extension, and Sage Absolute Return have computable public scraper sources; Ten Cap, Regal, Acadian, and Bennelong market-neutral peers remain disabled placeholders until durable public history is validated.
+- Peer-set appendices are configured for long-short and market-neutral competitors. Firetrail Alpha Plus, Ten Cap Alpha Plus, Firetrail Absolute Return, Sage Equity Plus, Perpetual SHARE-PLUS, Acadian Long Short, Vinva Alpha Extension, and Sage Absolute Return have computable public sources. Regal Long Short, Acadian Wholesale Market Neutral, Regal Tasman Market Neutral, and Bennelong Market Neutral remain disabled placeholders until durable public history is validated.
 - Selector High Conviction Equity Fund is disabled because the public source mapping appears wrong.
 - Vanguard Australian Shares Index is disabled because it closely tracks the benchmark index; its Vanguard API distribution parser now uses the `CASH` tax detail only rather than summing taxable components.
 - Smallco Broadcap, Investors Mutual Australian Share Fund, RQI Australian Value (formerly Realindex), First Sentier FSI Geared Australian Share Fund, Dimensional Australian Value, and Dimensional Aust Core Equity are represented in config but removed from the default report list.

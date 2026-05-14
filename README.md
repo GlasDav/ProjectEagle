@@ -6,7 +6,7 @@ By default, reports are calculated as of `T-2` so every fund and the benchmark a
 
 The rendered terminal, HTML, Excel, and Teams tables now include a `Style` column so you can scan `Value`, `Growth`, and `Agnostic` managers without changing any ranking or return calculations.
 
-Reports can also append configured peer-set tables after the main performance table. `config.yaml` currently defines long-short and market-neutral competitor sets; funds without durable public history are carried as disabled rows with a clear source-pending status instead of invented data.
+Reports can also append configured peer-set tables after the main performance table. `config.yaml` currently defines long-short and market-neutral competitor sets; funds without durable public history are kept as disabled placeholders in the config, but are not rendered as all-`N/A` peer-table rows.
 
 ## Core Rules
 
@@ -26,6 +26,7 @@ Reports can also append configured peer-set tables after the main performance ta
 
 - `yfinance` funds use adjusted close data directly.
 - Some scraper-backed funds report distributions on the cum-price row rather than the next ex-price row. Those sources use `distribution_timing: next_price_date` in `config.yaml` so distributions are reinvested against the correct tradable price.
+- Colonial First State historical unit-price downloads expose pre-income and post-income exit prices on distribution rows. The CFS scraper uses the post-income exit price as ex-distribution NAV and reinvests the pre/post difference.
 - Airlie historical prices are sourced from a multi-sheet workbook. The scraper reads all sheets and derives distributions from rows flagged as `ex`.
 - Solaris Core Australian Equity Fund is sourced from Solaris' public page tables for unit prices and distributions. The currently public history begins on `2021-10-18`, so 5Y output can remain `N/A` until the public source lengthens.
 - Allan Gray Australia Equity Fund has a disabled scraper path using Equity Trustees prices and Allan Gray fact sheet data. It is not in the default report because the public daily feed is stale and the month-end fact sheet price is not suitable for daily MTD ranking.
