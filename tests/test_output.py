@@ -177,15 +177,15 @@ def test_build_html_table_highlights_top_and_bottom_three_per_period():
     assert html.count('class="pill bottom-performer"') == 18
 
 
-def test_build_html_report_competitor_sets_highlight_only_best_and_worst_per_period():
+def test_build_html_report_competitor_sets_highlight_top_and_bottom_three_per_period():
     absolute_rows, relative_rows = _sample_rows()
     competitor_sets = [{"id": "competitors", "title": "Competitors", "rows": _ranked_rows()}]
 
     html = build_html_report(absolute_rows, relative_rows, pd.Timestamp("2026-03-29"), competitor_sets=competitor_sets)
     competitor_html = html.split('<section class="table-card" id="competitors">', 1)[1]
 
-    assert competitor_html.count('class="pill top-performer"') == 6
-    assert competitor_html.count('class="pill bottom-performer"') == 6
+    assert competitor_html.count('class="pill top-performer"') == 18
+    assert competitor_html.count('class="pill bottom-performer"') == 18
 
 
 def test_build_html_report_appends_competitor_set_tables_without_commentary():
@@ -287,7 +287,7 @@ def test_export_to_excel_highlights_top_and_bottom_three_per_period(tmp_path: Pa
     assert sheet["D8"].fill.fgColor.rgb == "FFDEF1E5"
 
 
-def test_export_to_excel_competitor_sets_highlight_only_best_and_worst_per_period(tmp_path: Path):
+def test_export_to_excel_competitor_sets_highlight_top_and_bottom_three_per_period(tmp_path: Path):
     absolute_rows, relative_rows = _sample_rows()
     output_path = tmp_path / "report.xlsx"
 
@@ -304,8 +304,15 @@ def test_export_to_excel_competitor_sets_highlight_only_best_and_worst_per_perio
 
     assert sheet["D2"].font.bold is True
     assert sheet["D2"].fill.fgColor.rgb == "FFF6DFD9"
-    assert sheet["D3"].font.bold is False
-    assert sheet["D7"].font.bold is False
+    assert sheet["D3"].font.bold is True
+    assert sheet["D3"].fill.fgColor.rgb == "FFF6DFD9"
+    assert sheet["D4"].font.bold is True
+    assert sheet["D4"].fill.fgColor.rgb == "FFF6DFD9"
+    assert sheet["D5"].font.bold is False
+    assert sheet["D6"].font.bold is True
+    assert sheet["D6"].fill.fgColor.rgb == "FFDEF1E5"
+    assert sheet["D7"].font.bold is True
+    assert sheet["D7"].fill.fgColor.rgb == "FFDEF1E5"
     assert sheet["D8"].font.bold is True
     assert sheet["D8"].fill.fgColor.rgb == "FFDEF1E5"
 
@@ -329,6 +336,11 @@ def test_export_to_excel_competitor_set_highlights_ignore_benchmark_row(tmp_path
     assert sheet["D2"].font.bold is False
     assert sheet["D2"].fill.fgColor.rgb == "00000000"
     assert sheet["D3"].fill.fgColor.rgb == "FFF6DFD9"
+    assert sheet["D4"].fill.fgColor.rgb == "FFF6DFD9"
+    assert sheet["D5"].fill.fgColor.rgb == "FFF6DFD9"
+    assert sheet["D6"].fill.fgColor.rgb == "00000000"
+    assert sheet["D7"].fill.fgColor.rgb == "FFDEF1E5"
+    assert sheet["D8"].fill.fgColor.rgb == "FFDEF1E5"
     assert sheet["D9"].fill.fgColor.rgb == "FFDEF1E5"
 
 

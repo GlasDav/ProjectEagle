@@ -84,10 +84,8 @@ def _value_text_block(
 
 def _format_highlighted_percent(value: float | None, highlight: PerformanceHighlight | None = None) -> str:
     label = _format_percent(value)
-    if highlight == HIGHLIGHT_TOP:
-        return f"Best {label}"
-    if highlight == HIGHLIGHT_BOTTOM:
-        return f"Worst {label}"
+    if highlight in {HIGHLIGHT_TOP, HIGHLIGHT_BOTTOM}:
+        return f"**{label}**"
     return label
 
 
@@ -331,8 +329,6 @@ def _adaptive_competitor_set_blocks(competitor_sets: list | None) -> list[dict[s
         blocks.append(
             _build_adaptive_table(
                 _competitor_set_rows(competitor_set),
-                top_n=1,
-                bottom_n=1,
                 include_benchmark_highlight=False,
             )
         )
@@ -490,8 +486,6 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
                 "title": _competitor_set_title(competitor_set),
                 "text": _build_plaintext_table(
                     _competitor_set_rows(competitor_set),
-                    top_n=1,
-                    bottom_n=1,
                     include_benchmark_highlight=False,
                 ),
                 "markdown": True,

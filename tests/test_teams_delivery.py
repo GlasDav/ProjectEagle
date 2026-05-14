@@ -206,7 +206,7 @@ def test_build_teams_message_card_adaptive_appends_competitor_set_tables():
     assert "Bennelong Market Neutral Fund" in body[-1]["rows"][2]["cells"][0]["items"][0]["text"]
 
 
-def test_build_teams_message_card_adaptive_competitor_tables_highlight_only_best_and_worst_per_period():
+def test_build_teams_message_card_adaptive_competitor_tables_highlight_top_and_bottom_three_per_period():
     absolute_rows, relative_rows = _sample_rows()
 
     payload = build_teams_message_card(
@@ -225,8 +225,10 @@ def test_build_teams_message_card_adaptive_competitor_tables_highlight_only_best
 
     assert first_mtd["color"] == "Attention"
     assert first_mtd["weight"] == "Bolder"
-    assert second_mtd.get("weight") is None
-    assert second_last_mtd.get("weight") is None
+    assert second_mtd["color"] == "Attention"
+    assert second_mtd["weight"] == "Bolder"
+    assert second_last_mtd["color"] == "Good"
+    assert second_last_mtd["weight"] == "Bolder"
     assert last_mtd["color"] == "Good"
     assert last_mtd["weight"] == "Bolder"
 
@@ -312,7 +314,7 @@ def test_build_teams_message_card_legacy_includes_style_column():
     assert any(section.get("title") == "Style lens" for section in payload["sections"])
 
 
-def test_build_teams_message_card_legacy_marks_top_and_bottom_three_per_period():
+def test_build_teams_message_card_legacy_marks_top_and_bottom_three_per_period_without_labels():
     rows = _ranked_rows()
 
     payload = build_teams_message_card(
@@ -324,13 +326,19 @@ def test_build_teams_message_card_legacy_marks_top_and_bottom_three_per_period()
 
     table_text = payload["sections"][-1]["text"]
 
-    assert "Best 7.0%" in table_text
-    assert "Worst 1.0%" in table_text
+    assert "Best" not in table_text
+    assert "Worst" not in table_text
+    assert "**7.0%**" in table_text
+    assert "**6.0%**" in table_text
+    assert "**5.0%**" in table_text
+    assert "**1.0%**" in table_text
+    assert "**2.0%**" in table_text
+    assert "**3.0%**" in table_text
     assert "🟢" not in table_text
     assert "🔴" not in table_text
 
 
-def test_build_teams_message_card_legacy_competitor_tables_highlight_only_best_and_worst_per_period():
+def test_build_teams_message_card_legacy_competitor_tables_highlight_top_and_bottom_three_per_period_without_labels():
     absolute_rows, relative_rows = _sample_rows()
 
     payload = build_teams_message_card(
@@ -343,10 +351,14 @@ def test_build_teams_message_card_legacy_competitor_tables_highlight_only_best_a
 
     table_text = payload["sections"][-1]["text"]
 
-    assert "Worst 1.0%" in table_text
-    assert "Worst 2.0%" not in table_text
-    assert "Best 6.0%" not in table_text
-    assert "Best 7.0%" in table_text
+    assert "Best" not in table_text
+    assert "Worst" not in table_text
+    assert "**1.0%**" in table_text
+    assert "**2.0%**" in table_text
+    assert "**3.0%**" in table_text
+    assert "**5.0%**" in table_text
+    assert "**6.0%**" in table_text
+    assert "**7.0%**" in table_text
 
 
 def test_build_teams_message_card_legacy_bolds_all_firetrail_funds_without_emoji_prefix():

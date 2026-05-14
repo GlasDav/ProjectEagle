@@ -186,8 +186,6 @@ def render_tables(
             build_rich_table(
                 _competitor_set_rows(competitor_set),
                 f"{_competitor_set_title(competitor_set)} ({as_of_date:%Y-%m-%d})",
-                top_n=1,
-                bottom_n=1,
                 include_benchmark=False,
             )
         )
@@ -808,7 +806,7 @@ def _build_competitor_set_sections_html(competitor_sets: list) -> str:
       <p class="insight-kicker">Competitor set</p>
       <h2>{escape(title)}</h2>
       <div class="table-wrap">
-        {_build_html_table(rows, include_benchmark_marker=True, top_n=1, bottom_n=1, include_benchmark_highlight=False)}
+        {_build_html_table(rows, include_benchmark_marker=True, include_benchmark_highlight=False)}
       </div>
     </section>
             """
@@ -947,13 +945,11 @@ def export_to_excel(
     top_fill = PatternFill(fill_type="solid", fgColor="FFDEF1E5")
     bottom_fill = PatternFill(fill_type="solid", fgColor="FFF6DFD9")
     for sheet_name in rows_by_sheet:
-        top_n = 1 if sheet_name not in {"Absolute", "Relative"} else 3
-        bottom_n = 1 if sheet_name not in {"Absolute", "Relative"} else 3
         highlights = build_period_highlights(
             rows_by_sheet[sheet_name],
             periods=PERIODS,
-            top_n=top_n,
-            bottom_n=bottom_n,
+            top_n=3,
+            bottom_n=3,
             include_benchmark=sheet_name in {"Absolute", "Relative"},
         )
         worksheet = workbook[sheet_name]
