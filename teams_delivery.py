@@ -10,6 +10,10 @@ import requests
 from performance import PERIODS
 from table_highlighting import HIGHLIGHT_BOTTOM, HIGHLIGHT_TOP, PerformanceHighlight, build_period_highlights
 
+LEGACY_TOP_MARKER = "\N{LARGE GREEN CIRCLE}"
+LEGACY_BOTTOM_MARKER = "\N{LARGE RED CIRCLE}"
+LEGACY_HIGHLIGHT_LEGEND = "Green circles mark top-three results; red circles mark bottom-three results."
+
 
 def load_teams_webhook_url(webhook_url: str | None = None) -> str:
     resolved = webhook_url or os.getenv("PERFSRAPER_TEAMS_WEBHOOK_URL")
@@ -84,9 +88,19 @@ def _value_text_block(
 
 def _format_highlighted_percent(value: float | None, highlight: PerformanceHighlight | None = None) -> str:
     label = _format_percent(value)
-    if highlight in {HIGHLIGHT_TOP, HIGHLIGHT_BOTTOM}:
-        return f"**{label}**"
+    if highlight == HIGHLIGHT_TOP:
+        return f"{LEGACY_TOP_MARKER} **{label}**"
+    if highlight == HIGHLIGHT_BOTTOM:
+        return f"{LEGACY_BOTTOM_MARKER} **{label}**"
     return label
+
+
+def _highlight_cell_style(highlight: PerformanceHighlight | None) -> str | None:
+    if highlight == HIGHLIGHT_TOP:
+        return "good"
+    if highlight == HIGHLIGHT_BOTTOM:
+        return "attention"
+    return None
 
 
 def _table_rows_with_benchmark_absolute(absolute_rows: list[dict], relative_rows: list[dict]) -> list[dict]:
@@ -241,7 +255,7 @@ def _build_plaintext_table(
     lines.append("-|-".join("-" * width for width in widths))
     for row in rendered_rows:
         lines.append(" | ".join(fit(value, widths[index]).ljust(widths[index]) for index, value in enumerate(row)))
-    return "\n".join(lines)
+    return f"{LEGACY_HIGHLIGHT_LEGEND}\n\n" + "\n".join(lines)
 
 
 def _competitor_set_title(competitor_set) -> str:
@@ -289,17 +303,22 @@ def _build_adaptive_table(
             {"type": "TableCell", "items": [_text_block(str(row.get("Style") or ""))]},
         ]
         for period in PERIODS:
+            highlight = highlights.get((row_index, period))
+            value_cell = {
+                "type": "TableCell",
+                "items": [
+                    _value_text_block(
+                        row.get(period),
+                        error=row.get("error", False),
+                        highlight=highlight,
+                    )
+                ],
+            }
+            cell_style = _highlight_cell_style(highlight)
+            if cell_style:
+                value_cell["style"] = cell_style
             cells.append(
-                {
-                    "type": "TableCell",
-                    "items": [
-                        _value_text_block(
-                            row.get(period),
-                            error=row.get("error", False),
-                            highlight=highlights.get((row_index, period)),
-                        )
-                    ],
-                }
+                value_cell
             )
         table_rows.append({"type": "TableRow", "cells": cells})
 

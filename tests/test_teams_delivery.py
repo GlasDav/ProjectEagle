@@ -180,11 +180,15 @@ def test_build_teams_message_card_adaptive_highlights_top_and_bottom_three_per_p
     )
 
     table = payload["attachments"][0]["content"]["body"][-1]
-    first_mtd = table["rows"][1]["cells"][2]["items"][0]
-    last_mtd = table["rows"][-1]["cells"][2]["items"][0]
+    first_mtd_cell = table["rows"][1]["cells"][2]
+    last_mtd_cell = table["rows"][-1]["cells"][2]
+    first_mtd = first_mtd_cell["items"][0]
+    last_mtd = last_mtd_cell["items"][0]
 
+    assert first_mtd_cell["style"] == "attention"
     assert first_mtd["color"] == "Attention"
     assert first_mtd["weight"] == "Bolder"
+    assert last_mtd_cell["style"] == "good"
     assert last_mtd["color"] == "Good"
     assert last_mtd["weight"] == "Bolder"
 
@@ -218,17 +222,25 @@ def test_build_teams_message_card_adaptive_competitor_tables_highlight_top_and_b
     )
 
     table = payload["attachments"][0]["content"]["body"][-1]
-    first_mtd = table["rows"][1]["cells"][2]["items"][0]
-    second_mtd = table["rows"][2]["cells"][2]["items"][0]
-    second_last_mtd = table["rows"][-2]["cells"][2]["items"][0]
-    last_mtd = table["rows"][-1]["cells"][2]["items"][0]
+    first_mtd_cell = table["rows"][1]["cells"][2]
+    second_mtd_cell = table["rows"][2]["cells"][2]
+    second_last_mtd_cell = table["rows"][-2]["cells"][2]
+    last_mtd_cell = table["rows"][-1]["cells"][2]
+    first_mtd = first_mtd_cell["items"][0]
+    second_mtd = second_mtd_cell["items"][0]
+    second_last_mtd = second_last_mtd_cell["items"][0]
+    last_mtd = last_mtd_cell["items"][0]
 
+    assert first_mtd_cell["style"] == "attention"
     assert first_mtd["color"] == "Attention"
     assert first_mtd["weight"] == "Bolder"
+    assert second_mtd_cell["style"] == "attention"
     assert second_mtd["color"] == "Attention"
     assert second_mtd["weight"] == "Bolder"
+    assert second_last_mtd_cell["style"] == "good"
     assert second_last_mtd["color"] == "Good"
     assert second_last_mtd["weight"] == "Bolder"
+    assert last_mtd_cell["style"] == "good"
     assert last_mtd["color"] == "Good"
     assert last_mtd["weight"] == "Bolder"
 
@@ -246,12 +258,16 @@ def test_build_teams_message_card_adaptive_competitor_highlights_ignore_benchmar
 
     table = payload["attachments"][0]["content"]["body"][-1]
     benchmark_mtd = table["rows"][1]["cells"][2]["items"][0]
-    lowest_fund_mtd = table["rows"][2]["cells"][2]["items"][0]
-    highest_fund_mtd = table["rows"][-1]["cells"][2]["items"][0]
+    lowest_fund_mtd_cell = table["rows"][2]["cells"][2]
+    highest_fund_mtd_cell = table["rows"][-1]["cells"][2]
+    lowest_fund_mtd = lowest_fund_mtd_cell["items"][0]
+    highest_fund_mtd = highest_fund_mtd_cell["items"][0]
 
     assert benchmark_mtd.get("weight") is None
+    assert lowest_fund_mtd_cell["style"] == "attention"
     assert lowest_fund_mtd["color"] == "Attention"
     assert lowest_fund_mtd["weight"] == "Bolder"
+    assert highest_fund_mtd_cell["style"] == "good"
     assert highest_fund_mtd["color"] == "Good"
     assert highest_fund_mtd["weight"] == "Bolder"
 
@@ -325,17 +341,24 @@ def test_build_teams_message_card_legacy_marks_top_and_bottom_three_per_period_w
     )
 
     table_text = payload["sections"][-1]["text"]
+    green_marker = "\N{LARGE GREEN CIRCLE}"
+    red_marker = "\N{LARGE RED CIRCLE}"
 
     assert "Best" not in table_text
     assert "Worst" not in table_text
+    assert f"{green_marker} **7.0%**" in table_text
+    assert f"{green_marker} **6.0%**" in table_text
+    assert f"{green_marker} **5.0%**" in table_text
+    assert f"{red_marker} **1.0%**" in table_text
+    assert f"{red_marker} **2.0%**" in table_text
+    assert f"{red_marker} **3.0%**" in table_text
+    assert "Green circles mark top-three results" in table_text
     assert "**7.0%**" in table_text
     assert "**6.0%**" in table_text
     assert "**5.0%**" in table_text
     assert "**1.0%**" in table_text
     assert "**2.0%**" in table_text
     assert "**3.0%**" in table_text
-    assert "🟢" not in table_text
-    assert "🔴" not in table_text
 
 
 def test_build_teams_message_card_legacy_competitor_tables_highlight_top_and_bottom_three_per_period_without_labels():
@@ -350,9 +373,18 @@ def test_build_teams_message_card_legacy_competitor_tables_highlight_top_and_bot
     )
 
     table_text = payload["sections"][-1]["text"]
+    green_marker = "\N{LARGE GREEN CIRCLE}"
+    red_marker = "\N{LARGE RED CIRCLE}"
 
     assert "Best" not in table_text
     assert "Worst" not in table_text
+    assert f"{red_marker} **1.0%**" in table_text
+    assert f"{red_marker} **2.0%**" in table_text
+    assert f"{red_marker} **3.0%**" in table_text
+    assert f"{green_marker} **5.0%**" in table_text
+    assert f"{green_marker} **6.0%**" in table_text
+    assert f"{green_marker} **7.0%**" in table_text
+    assert "Green circles mark top-three results" in table_text
     assert "**1.0%**" in table_text
     assert "**2.0%**" in table_text
     assert "**3.0%**" in table_text
