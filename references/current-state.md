@@ -2,7 +2,7 @@
 
 This file is the quick onboarding reference for the live PerfSraper configuration.
 
-## As Of May 14, 2026
+## As Of May 19, 2026
 
 - Benchmark: S&P/ASX 200 Accumulation via `^AXJT`
 - Live funds: 32
@@ -16,6 +16,12 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - `ex_distribution` series should explicitly model distribution timing where the source does not already provide ex-price history on the distribution row.
 
 ## Recent Fixes
+
+### Highlight display and Lazard long-period coverage
+
+- Best/worst highlights now exclude the benchmark/index row and average rows. Tables with fewer than five eligible funds highlight one best and one worst result per period, tables with five to nine eligible funds highlight two of each, and larger tables keep three of each.
+- Legacy Teams webhook tables now put the green/red marker after the percentage so numeric values remain aligned.
+- Lazard's public daily NAV API currently exposes daily rows from `2025-04-22` onward. The Lazard scraper still uses daily NAV plus explicit distribution PDFs for short periods, and now adds long-period calibration anchors from Lazard's official annualized net AUD performance block, respecting that block's `asOfDate`, so 3Y and 5Y values no longer render as `N/A` solely because the daily NAV window is truncated.
 
 ### Selector and Allan Gray deactivation
 

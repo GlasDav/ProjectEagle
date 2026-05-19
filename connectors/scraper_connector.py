@@ -856,6 +856,110 @@ def _parse_lazard_historical_nav(
     ).dropna(subset=["date", "nav"])
 
 
+def _extract_lazard_annualized_net_performance(share_class: dict[str, object]) -> dict[int, float]:
+    performance = (((share_class.get("data") or {}).get("performance") or {}).get("annualized") or {})
+    net_aud_rows = ((performance.get("net") or {}).get("AUD")) or []
+    if not net_aud_rows:
+        return {}
+
+    row = net_aud_rows[0]
+    fields = {3: "threeYears", 5: "fiveYears"}
+    values: dict[int, float] = {}
+    for years, field in fields.items():
+        value = (row.get(field) or {}).get("value") if isinstance(row.get(field), dict) else None
+        try:
+            values[years] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return values
+
+
+def _extract_lazard_annualized_performance_as_of(share_class: dict[str, object]) -> pd.Timestamp | None:
+    performance = (((share_class.get("data") or {}).get("performance") or {}).get("annualized") or {})
+    timestamp = pd.to_datetime(performance.get("asOfDate"), errors="coerce")
+    if pd.isna(timestamp):
+        return None
+    return pd.Timestamp(timestamp).normalize()
+
+
+def _build_lazard_total_return_series(frame: pd.DataFrame) -> pd.Series:
+    nav = pd.to_numeric(frame["nav"], errors="coerce")
+    distributions = pd.to_numeric(
+        frame.get("distribution", pd.Series(index=frame.index, dtype=float)),
+        errors="coerce",
+    ).fillna(0.0)
+    returns = nav / nav.shift(1) - 1
+    distribution_mask = distributions != 0
+    returns.loc[distribution_mask] = (nav.loc[distribution_mask] + distributions.loc[distribution_mask]) / nav.shift(1).loc[
+        distribution_mask
+    ] - 1
+    returns.iloc[0] = 0.0
+    return (1 + returns.fillna(0.0)).cumprod() * 100.0
+
+
+def _extend_lazard_history_with_performance_anchors(
+    history: pd.DataFrame,
+    share_class: dict[str, object],
+    end_date: str,
+) -> pd.DataFrame:
+    if history.empty or "nav" not in history.columns:
+        return history
+
+    performance = _extract_lazard_annualized_net_performance(share_class)
+    if not performance:
+        return history
+
+    frame = history.copy().sort_index()
+    frame.index = pd.to_datetime(frame.index, errors="coerce").normalize()
+    frame = frame[~frame.index.isna()]
+    if "distribution" not in frame.columns:
+        frame["distribution"] = 0.0
+
+    end = pd.Timestamp(end_date).normalize()
+    eligible_dates = frame.index[frame.index <= end]
+    if len(eligible_dates) == 0:
+        return history
+
+    end_timestamp = eligible_dates[-1]
+    performance_as_of = _extract_lazard_annualized_performance_as_of(share_class)
+    performance_base_timestamp = end_timestamp
+    if performance_as_of is not None and performance_as_of <= end_timestamp:
+        performance_dates = frame.index[frame.index <= performance_as_of]
+        if len(performance_dates) > 0:
+            performance_base_timestamp = performance_dates[-1]
+    first_timestamp = frame.index[0]
+    first_nav = float(frame.loc[first_timestamp, "nav"])
+    if first_nav <= 0:
+        return history
+
+    tri = _build_lazard_total_return_series(frame.loc[:end_timestamp])
+    performance_base_growth = float(tri.loc[performance_base_timestamp]) / 100.0
+    anchor_rows: list[dict[str, object]] = []
+    for years in sorted(performance, reverse=True):
+        anchor_date = end_timestamp - pd.DateOffset(years=years)
+        if frame.index.min() <= anchor_date:
+            continue
+
+        annualized_return = performance[years] / 100.0
+        total_return = (1 + annualized_return) ** years
+        if total_return <= 0:
+            continue
+
+        anchor_rows.append(
+            {
+                "date": anchor_date,
+                "nav": first_nav * performance_base_growth / total_return,
+                "distribution": 0.0,
+            }
+        )
+
+    if not anchor_rows:
+        return history
+
+    anchors = pd.DataFrame(anchor_rows).set_index("date")
+    return pd.concat([anchors, frame]).sort_index()
+
+
 def _parse_lazard_share_class_order(pdf_text: str) -> list[str]:
     annual_matches = re.findall(r"\b([IWS] Class)\b", pdf_text)
     annual_order: list[str] = []
@@ -2159,10 +2263,16 @@ def scrape_lazard_product_api(
         type="Fund",
     )
     api_response = _get_with_retry(session, api_url, timeout=20)
+    api_payload = api_response.json()
     prices = _parse_lazard_historical_nav(
-        api_response.json(),
+        api_payload,
         str(share_class_id),
         str(fund_config.get("price_field", "withdrawalPrice")),
+    )
+    product = api_payload[0] if api_payload else {}
+    share_class = next(
+        (item for item in product.get("shareClasses", []) if str(item.get("id")) == str(share_class_id)),
+        {},
     )
 
     pdf_urls = fund_config.get("distribution_pdf_urls") or []
@@ -2183,13 +2293,14 @@ def scrape_lazard_product_api(
             .reset_index(drop=True)
         )
 
-    return _merge_prices_and_distributions(
+    history = _merge_prices_and_distributions(
         prices,
         distributions,
         start_date,
         end_date,
         distribution_timing=fund_config.get("distribution_timing", "next_price_date"),
     )
+    return _extend_lazard_history_with_performance_anchors(history, share_class, end_date)
 
 
 @register_scraper("perpetual_family")

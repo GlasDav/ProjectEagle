@@ -15,6 +15,7 @@ from connectors.scraper_connector import (
     _build_macquarie_history_url,
     _parse_lazard_annual_distribution_pdf_text,
     _parse_dnr_distribution_history_table,
+    _extend_lazard_history_with_performance_anchors,
     _parse_lazard_historical_nav,
     _parse_lazard_legacy_distribution_pdf_text,
     _parse_macquarie_historical_price_csv,
@@ -399,6 +400,72 @@ def test_parse_lazard_historical_nav_reads_selected_share_class_withdrawal_price
         {"date": pd.Timestamp("2026-04-01"), "nav": 1.8133},
         {"date": pd.Timestamp("2026-03-31"), "nav": 1.7943},
     ]
+
+
+def test_extend_lazard_history_with_performance_anchors_backfills_long_period_targets():
+    history = pd.DataFrame(
+        {
+            "nav": [1.60, 1.65],
+            "distribution": [0.0, 0.0],
+        },
+        index=pd.to_datetime(["2025-04-22", "2026-05-15"]),
+    )
+    share_class = {
+        "data": {
+            "performance": {
+                "annualized": {
+                    "net": {
+                        "AUD": [
+                            {
+                                "threeYears": {"value": 4.0},
+                                "fiveYears": {"value": 6.0},
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    extended = _extend_lazard_history_with_performance_anchors(history, share_class, "2026-05-15")
+
+    assert extended.index.strftime("%Y-%m-%d").tolist() == [
+        "2021-05-15",
+        "2023-05-15",
+        "2025-04-22",
+        "2026-05-15",
+    ]
+    assert extended.loc[pd.Timestamp("2021-05-15"), "distribution"] == 0.0
+    assert extended.loc[pd.Timestamp("2023-05-15"), "distribution"] == 0.0
+    assert extended.loc[pd.Timestamp("2023-05-15"), "nav"] == pytest.approx(
+        1.60 * (1.65 / 1.60) / ((1 + 0.04) ** 3)
+    )
+
+
+def test_extend_lazard_history_with_performance_anchors_respects_performance_as_of_date():
+    history = pd.DataFrame(
+        {
+            "nav": [1.60, 1.68, 1.65],
+            "distribution": [0.0, 0.0, 0.0],
+        },
+        index=pd.to_datetime(["2025-04-22", "2026-04-30", "2026-05-15"]),
+    )
+    share_class = {
+        "data": {
+            "performance": {
+                "annualized": {
+                    "asOfDate": "2026-04-30",
+                    "net": {"AUD": [{"threeYears": {"value": 4.0}}]},
+                }
+            }
+        }
+    }
+
+    extended = _extend_lazard_history_with_performance_anchors(history, share_class, "2026-05-15")
+
+    assert extended.loc[pd.Timestamp("2023-05-15"), "nav"] == pytest.approx(
+        1.60 * (1.68 / 1.60) / ((1 + 0.04) ** 3)
+    )
 
 
 def test_parse_lazard_annual_distribution_pdf_text_reads_selected_share_class_block():

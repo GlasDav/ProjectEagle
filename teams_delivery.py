@@ -12,7 +12,7 @@ from table_highlighting import HIGHLIGHT_BOTTOM, HIGHLIGHT_TOP, PerformanceHighl
 
 LEGACY_TOP_MARKER = "\N{LARGE GREEN CIRCLE}"
 LEGACY_BOTTOM_MARKER = "\N{LARGE RED CIRCLE}"
-LEGACY_HIGHLIGHT_LEGEND = "Green circles mark top-three results; red circles mark bottom-three results."
+LEGACY_HIGHLIGHT_LEGEND = "Green circles mark best performers; red circles mark worst performers."
 
 
 def load_teams_webhook_url(webhook_url: str | None = None) -> str:
@@ -89,9 +89,9 @@ def _value_text_block(
 def _format_highlighted_percent(value: float | None, highlight: PerformanceHighlight | None = None) -> str:
     label = _format_percent(value)
     if highlight == HIGHLIGHT_TOP:
-        return f"{LEGACY_TOP_MARKER} **{label}**"
+        return f"**{label}** {LEGACY_TOP_MARKER}"
     if highlight == HIGHLIGHT_BOTTOM:
-        return f"{LEGACY_BOTTOM_MARKER} **{label}**"
+        return f"**{label}** {LEGACY_BOTTOM_MARKER}"
     return label
 
 
@@ -216,7 +216,7 @@ def _build_plaintext_table(
     *,
     top_n: int = 3,
     bottom_n: int = 3,
-    include_benchmark_highlight: bool = True,
+    include_benchmark_highlight: bool = False,
 ) -> str:
     highlights = build_period_highlights(
         rows,
@@ -275,7 +275,7 @@ def _build_adaptive_table(
     *,
     top_n: int = 3,
     bottom_n: int = 3,
-    include_benchmark_highlight: bool = True,
+    include_benchmark_highlight: bool = False,
 ) -> dict[str, Any]:
     headers = ["Fund", "Style", *[f"{period} (p.a.)" if period in {"3Y", "5Y"} else period for period in PERIODS]]
     highlights = build_period_highlights(

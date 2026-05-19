@@ -197,7 +197,7 @@ def build_rich_table(
     *,
     top_n: int = 3,
     bottom_n: int = 3,
-    include_benchmark: bool = True,
+    include_benchmark: bool = False,
 ) -> Table:
     table = Table(title=title)
     highlights = build_period_highlights(
@@ -769,7 +769,7 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
     <section class="table-card">
       <p class="insight-kicker">Absolute performance</p>
       <h2>Total return table</h2>
-      <p>Returns shown after reinvesting distributions where required. Green highlights mark top-three results per period; red highlights mark bottom-three results.</p>
+      <p>Returns shown after reinvesting distributions where required. Green highlights mark the best results per period; red highlights mark the worst results.</p>
       <div class="table-wrap">
         {_build_html_table(absolute_rows, include_benchmark_marker=True)}
       </div>
@@ -820,7 +820,7 @@ def _build_html_table(
     *,
     top_n: int = 3,
     bottom_n: int = 3,
-    include_benchmark_highlight: bool = True,
+    include_benchmark_highlight: bool = False,
 ) -> str:
     highlights = build_period_highlights(
         rows,
@@ -950,7 +950,7 @@ def export_to_excel(
             periods=PERIODS,
             top_n=3,
             bottom_n=3,
-            include_benchmark=sheet_name in {"Absolute", "Relative"},
+            include_benchmark=False,
         )
         worksheet = workbook[sheet_name]
         worksheet["A1"].font = Font(bold=True)

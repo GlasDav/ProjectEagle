@@ -15,14 +15,13 @@ def build_period_highlights(
     periods: Sequence[str],
     top_n: int = 3,
     bottom_n: int = 3,
-    include_benchmark: bool = True,
+    include_benchmark: bool = False,
 ) -> dict[tuple[int, str], PerformanceHighlight]:
     """Return per-cell top/bottom performance highlights for rendered tables.
 
     Highlights are calculated independently for each period over valid rendered
-    performance rows. Average/summary rows are excluded so they do not consume a
-    top/bottom slot. Benchmark rows remain eligible by default when they are part
-    of the rendered table, but callers can exclude them for mixed-basis tables.
+    performance rows. Benchmark and average/summary rows are excluded so they do
+    not consume a top/bottom slot, unless a caller explicitly opts benchmarks in.
     If a very small table causes top and bottom selections to overlap, the top
     highlight wins.
     """
@@ -46,8 +45,10 @@ def build_period_highlights(
         if not values:
             continue
 
-        top_values = sorted(values, key=lambda item: (-item[1], item[2]))[:top_n]
-        bottom_values = sorted(values, key=lambda item: (item[1], item[2]))[:bottom_n]
+        effective_top_n = _effective_highlight_count(len(values), top_n)
+        effective_bottom_n = _effective_highlight_count(len(values), bottom_n)
+        top_values = sorted(values, key=lambda item: (-item[1], item[2]))[:effective_top_n]
+        bottom_values = sorted(values, key=lambda item: (item[1], item[2]))[:effective_bottom_n]
 
         for index, _, _ in top_values:
             highlights[(index, period)] = HIGHLIGHT_TOP
@@ -55,3 +56,15 @@ def build_period_highlights(
             highlights.setdefault((index, period), HIGHLIGHT_BOTTOM)
 
     return highlights
+
+
+def _effective_highlight_count(valid_fund_count: int, requested_count: int) -> int:
+    if valid_fund_count <= 0 or requested_count <= 0:
+        return 0
+    if valid_fund_count < 5:
+        dynamic_count = 1
+    elif valid_fund_count < 10:
+        dynamic_count = 2
+    else:
+        dynamic_count = 3
+    return min(requested_count, dynamic_count, valid_fund_count)
