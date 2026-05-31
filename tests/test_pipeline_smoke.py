@@ -52,7 +52,7 @@ def test_pipeline_smoke(tmp_path, monkeypatch):
     assert main.main() == 0
 
 
-def test_relative_performance_matches_displayed_benchmark_returns(tmp_path, monkeypatch):
+def test_relative_performance_uses_benchmark_returns_aligned_to_fund_latest_date(tmp_path, monkeypatch):
     benchmark_csv = tmp_path / "benchmark.csv"
     benchmark_csv.write_text(
         "date,nav\n2024-01-01,100\n2024-02-01,100\n2024-03-01,100\n2024-04-01,90\n2024-04-03,80\n",
@@ -100,7 +100,8 @@ def test_relative_performance_matches_displayed_benchmark_returns(tmp_path, monk
     assert main.main() == 0
     assert captured["absolute_rows"][0]["3M"] == pytest.approx(-0.20)
     assert captured["absolute_rows"][1]["3M"] == pytest.approx(0.0)
-    assert captured["relative_rows"][0]["3M"] == pytest.approx(0.20)
+    assert captured["relative_rows"][0]["latest_date"] == pd.Timestamp("2024-04-01")
+    assert captured["relative_rows"][0]["3M"] == pytest.approx(0.10)
 
 
 def test_report_rows_ranked_by_mtd_descending(tmp_path, monkeypatch):
