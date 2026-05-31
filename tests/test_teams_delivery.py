@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from teams_delivery import build_teams_message_card
+from teams_delivery import build_teams_message_card, send_teams_message_card
 
 
 def _sample_rows():

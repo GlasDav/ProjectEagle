@@ -48,7 +48,7 @@ def _format_fund_label(row: dict) -> str:
     label = str(row["Fund"])
     if row.get("is_disabled"):
         return f"{label} ({row.get('disabled_reason') or 'Source pending'})"
-    if _row_is_stale(row) and row.get("latest_date") is not None:
+    if row.get("latest_date") is not None and int(row.get("stale_days") or 0) > 0:
         label = f"{label} (as of {pd.Timestamp(row['latest_date']):%Y-%m-%d})"
     return label
 
@@ -564,5 +564,12 @@ def send_teams_message_card(
     if response.status_code >= 400:
         body = response.text.strip()
         snippet = body[:500] if body else "<empty response body>"
-        raise RuntimeError(f"Teams webhook returned HTTP {response.status_code}: {snippet}")
+        guidance = ""
+        if response.status_code in {401, 403}:
+            guidance = (
+                " Verify the Teams webhook secret is current and authorized. "
+                "Legacy Microsoft 365 connector webhooks may return 403 after retirement; "
+                "replace the secret with a Teams Workflows webhook URL."
+            )
+        raise RuntimeError(f"Teams webhook returned HTTP {response.status_code}: {snippet}.{guidance}")
     return payload

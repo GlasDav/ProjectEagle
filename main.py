@@ -280,6 +280,7 @@ def build_fund_report_rows(
     start_date: str,
     use_cache: bool,
     cache_date: pd.Timestamp,
+    benchmark_tri: pd.Series | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     if not is_enabled(fund_config):
         return unavailable_absolute_row(fund_config), unavailable_relative_row(fund_config)
@@ -293,7 +294,12 @@ def build_fund_report_rows(
             cache_date=cache_date,
         )
         absolute_row = to_row(result)
-        relative = calculate_relative_returns(result.returns, benchmark_returns)
+        aligned_benchmark_returns = (
+            calculate_returns(benchmark_tri, result.latest_date)
+            if benchmark_tri is not None and result.latest_date is not None
+            else benchmark_returns
+        )
+        relative = calculate_relative_returns(result.returns, aligned_benchmark_returns)
         relative_row = {
             "Fund": result.name,
             "Style": result.style,
@@ -381,6 +387,7 @@ def build_competitor_set_results(
     start_date: str,
     use_cache: bool,
     cache_date: pd.Timestamp,
+    benchmark_tri: pd.Series | None = None,
     row_cache: dict[str, tuple[dict[str, Any], dict[str, Any]]] | None = None,
 ) -> list[CompetitorSetResult]:
     funds_by_name = _fund_lookup(config.get("funds") or [])
@@ -399,6 +406,7 @@ def build_competitor_set_results(
                     benchmark_returns=benchmark_returns,
                     as_of_date=as_of_date,
                     start_date=start_date,
+                    benchmark_tri=benchmark_tri,
                     use_cache=use_cache,
                     cache_date=cache_date,
                 )
@@ -479,6 +487,7 @@ def main() -> int:
         absolute_row, relative_row = build_fund_report_rows(
             fund_config,
             benchmark_returns=benchmark_returns,
+            benchmark_tri=benchmark_tri,
             as_of_date=as_of_date,
             start_date=start_date,
             use_cache=not args.no_cache,
@@ -501,6 +510,7 @@ def main() -> int:
         benchmark_returns=benchmark_returns,
         as_of_date=as_of_date,
         start_date=start_date,
+        benchmark_tri=benchmark_tri,
         use_cache=not args.no_cache,
         cache_date=as_of_date,
         row_cache=row_cache,
