@@ -320,7 +320,6 @@ def build_fund_report_rows(
     use_cache: bool,
     cache_date: pd.Timestamp,
     benchmark_tri: pd.Series | None = None,
-    fund_frame: pd.DataFrame | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     if not is_enabled(fund_config):
         return unavailable_absolute_row(fund_config), unavailable_relative_row(fund_config)

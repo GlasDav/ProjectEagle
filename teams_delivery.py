@@ -570,11 +570,10 @@ def send_teams_message_card(
         snippet = body[:500] if body else "<empty response body>"
         guidance = ""
         if response.status_code in {401, 403}:
-            mode = teams_webhook_payload_mode(webhook_url)
             guidance = (
-                f" Payload mode was {mode}. Verify the GitHub secret has the current Teams webhook URL, "
-                "the workflow/connector is enabled, and the posting identity still has access to the channel. "
-                "If the URL is a legacy connector URL, plan migration to a Teams Workflows webhook."
+                " Verify the Teams webhook secret is current and authorized. "
+                "Legacy Microsoft 365 connector webhooks may return 403 after retirement; "
+                "replace the secret with a Teams Workflows webhook URL."
             )
         raise RuntimeError(f"Teams webhook returned HTTP {response.status_code}: {snippet}.{guidance}")
     return payload
