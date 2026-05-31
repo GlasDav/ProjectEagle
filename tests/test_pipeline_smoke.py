@@ -106,6 +106,73 @@ def test_relative_performance_uses_benchmark_returns_aligned_to_fund_latest_date
     assert captured["relative_rows"][0]["3M"] == pytest.approx(0.10)
 
 
+def test_build_fund_report_rows_accepts_prefetched_fund_frame():
+    fund_config = {"name": "Fund A", "source": "csv", "nav_type": "total_return"}
+    frame = pd.DataFrame({"nav": [100.0, 102.0]}, index=pd.to_datetime(["2024-04-01", "2024-04-03"]))
+
+    absolute_row, relative_row = main.build_fund_report_rows(
+        fund_config,
+        benchmark_returns={period: 0.0 for period in main.PERIODS},
+        as_of_date=pd.Timestamp("2024-04-03"),
+        start_date="2024-04-01",
+        use_cache=False,
+        cache_date=pd.Timestamp("2024-04-03"),
+        fund_frame=frame,
+    )
+
+    assert absolute_row["Fund"] == "Fund A"
+    assert absolute_row["latest_date"] == pd.Timestamp("2024-04-03")
+    assert relative_row["MTD"] == absolute_row["MTD"]
+
+
+def test_report_date_uses_date_available_for_most_funds(tmp_path, monkeypatch):
+    benchmark_csv = tmp_path / "benchmark.csv"
+    benchmark_csv.write_text("date,nav\n2024-04-01,100\n2024-04-02,101\n2024-04-03,102\n", encoding="utf-8")
+
+    fund_a_csv = tmp_path / "fund_a.csv"
+    fund_a_csv.write_text("date,nav\n2024-04-01,100\n2024-04-02,101\n", encoding="utf-8")
+    fund_b_csv = tmp_path / "fund_b.csv"
+    fund_b_csv.write_text("date,nav\n2024-04-01,100\n2024-04-02,102\n", encoding="utf-8")
+    fund_c_csv = tmp_path / "fund_c.csv"
+    fund_c_csv.write_text("date,nav\n2024-04-01,100\n2024-04-03,103\n", encoding="utf-8")
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "benchmark": {
+                    "name": "Benchmark",
+                    "source": "csv",
+                    "file": str(benchmark_csv),
+                    "nav_type": "total_return",
+                },
+                "funds": [
+                    {"name": "Fund A", "source": "csv", "file": str(fund_a_csv), "nav_type": "total_return"},
+                    {"name": "Fund B", "source": "csv", "file": str(fund_b_csv), "nav_type": "total_return"},
+                    {"name": "Fund C", "source": "csv", "file": str(fund_c_csv), "nav_type": "total_return"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object] = {}
+
+    def capture_render_tables(absolute_rows, relative_rows, as_of_date):
+        captured["absolute_rows"] = absolute_rows
+        captured["as_of_date"] = as_of_date
+
+    monkeypatch.setattr(main, "render_tables", capture_render_tables)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["main.py", "--config", str(config_path), "--as-of", "2024-04-03", "--no-cache"],
+    )
+
+    assert main.main() == 0
+    assert captured["as_of_date"] == pd.Timestamp("2024-04-02")
+    assert next(row for row in captured["absolute_rows"] if row["Fund"] == "Fund C")["latest_date"] == pd.Timestamp("2024-04-01")
+
+
 def test_report_rows_ranked_by_mtd_descending(tmp_path, monkeypatch):
     benchmark_csv = tmp_path / "benchmark.csv"
     benchmark_csv.write_text("date,nav\n2024-04-01,100\n2024-04-03,100\n", encoding="utf-8")
