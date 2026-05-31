@@ -2,7 +2,7 @@
 
 PerfSraper builds a total-return performance dashboard for a set of Australian equity funds and compares them with the S&P/ASX 200 Accumulation Index.
 
-By default, reports are calculated as of `T-2` so every fund and the benchmark are measured from the same two-business-day-lagged reference point unless you explicitly pass `--as-of`.
+By default, reports request data as of `T-2`. The final report date is then selected as the latest date available for the largest number of default-report funds, so the main table is anchored to the date where most managers have public NAV data rather than making every row look stale. Passing `--as-of` sets the upper bound for that selection.
 
 The rendered terminal, HTML, Excel, and Teams tables now include a `Style` column so you can scan `Value`, `Growth`, and `Agnostic` managers without changing any ranking or return calculations.
 

@@ -66,6 +66,10 @@ def _is_legacy_connector_webhook(webhook_url: str | None) -> bool:
     return "webhook.office.com" in host or "/incomingwebhook/" in path
 
 
+def teams_webhook_payload_mode(webhook_url: str | None) -> str:
+    return "legacy MessageCard" if _is_legacy_connector_webhook(webhook_url) else "Adaptive Card"
+
+
 def _text_block(text: str, *, weight: str | None = None, size: str | None = None, color: str | None = None, wrap: bool = True) -> dict[str, Any]:
     block: dict[str, Any] = {"type": "TextBlock", "text": text, "wrap": wrap}
     if weight:

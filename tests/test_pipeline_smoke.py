@@ -90,6 +90,7 @@ def test_relative_performance_uses_benchmark_returns_aligned_to_fund_latest_date
     def capture_render_tables(absolute_rows, relative_rows, as_of_date):
         captured["absolute_rows"] = absolute_rows
         captured["relative_rows"] = relative_rows
+        captured["as_of_date"] = as_of_date
 
     monkeypatch.setattr(main, "render_tables", capture_render_tables)
     monkeypatch.setattr(
@@ -98,7 +99,8 @@ def test_relative_performance_uses_benchmark_returns_aligned_to_fund_latest_date
     )
 
     assert main.main() == 0
-    assert captured["absolute_rows"][0]["3M"] == pytest.approx(-0.20)
+    assert captured["as_of_date"] == pd.Timestamp("2024-04-01")
+    assert captured["absolute_rows"][0]["3M"] == pytest.approx(-0.10)
     assert captured["absolute_rows"][1]["3M"] == pytest.approx(0.0)
     assert captured["relative_rows"][0]["latest_date"] == pd.Timestamp("2024-04-01")
     assert captured["relative_rows"][0]["3M"] == pytest.approx(0.10)
@@ -224,6 +226,8 @@ def test_staleness_respects_configured_threshold(tmp_path, monkeypatch):
 
     fund_csv = tmp_path / "fund.csv"
     fund_csv.write_text("date,nav\n2024-04-01,100\n", encoding="utf-8")
+    current_fund_csv = tmp_path / "current_fund.csv"
+    current_fund_csv.write_text("date,nav\n2024-04-01,100\n2024-04-10,101\n", encoding="utf-8")
 
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
@@ -242,6 +246,12 @@ def test_staleness_respects_configured_threshold(tmp_path, monkeypatch):
                         "file": str(fund_csv),
                         "nav_type": "total_return",
                         "stale_after_days": 15,
+                    },
+                    {
+                        "name": "Fund B",
+                        "source": "csv",
+                        "file": str(current_fund_csv),
+                        "nav_type": "total_return",
                     }
                 ],
             }
@@ -261,7 +271,7 @@ def test_staleness_respects_configured_threshold(tmp_path, monkeypatch):
     )
 
     assert main.main() == 0
-    fund_row = captured["absolute_rows"][1]
+    fund_row = next(row for row in captured["absolute_rows"] if row["Fund"] == "Fund A")
     assert fund_row["stale_days"] == 9
     assert fund_row["is_stale"] is False
 
