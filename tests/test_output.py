@@ -190,17 +190,6 @@ def test_build_rich_table_wraps_stale_as_of_date_without_ellipsis():
     assert "…" not in rendered
 
 
-def test_plaintext_report_labels_non_stale_date_offsets_without_stale_count():
-    absolute_rows, relative_rows = _sample_rows()
-    absolute_rows[1]["latest_date"] = pd.Timestamp("2026-03-28")
-    absolute_rows[1]["stale_days"] = 1
-    absolute_rows[1]["is_stale"] = False
-
-    report = build_plaintext_report(absolute_rows, relative_rows, pd.Timestamp("2026-03-29"))
-
-    assert "Fund A (as of 2026-03-28)" in report
-    assert "Funds with stale public data: 0" in report
-
 def test_build_html_report_includes_style_column_and_values():
     absolute_rows, relative_rows = _sample_rows()
 

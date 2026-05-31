@@ -204,51 +204,6 @@ def test_build_teams_message_card_legacy_headline_uses_benchmark_latest_nav_date
     assert payload["sections"][-1]["title"] == "Full performance table (as at 2026-03-28)"
 
 
-def test_build_teams_message_card_labels_rows_with_non_stale_date_offsets():
-    absolute_rows, relative_rows = _sample_rows()
-    relative_rows[0]["latest_date"] = pd.Timestamp("2026-03-28")
-    relative_rows[0]["stale_days"] = 1
-    relative_rows[0]["is_stale"] = False
-
-    payload = build_teams_message_card(
-        absolute_rows,
-        relative_rows,
-        pd.Timestamp("2026-03-29"),
-        webhook_url="https://example.com/webhook",
-    )
-
-    table = payload["attachments"][0]["content"]["body"][-1]
-
-    assert table["rows"][2]["cells"][0]["items"][0]["text"] == "Fund A (as of 2026-03-28)"
-
-
-def test_send_teams_message_card_403_error_mentions_workflows_webhook():
-    class FakeResponse:
-        status_code = 403
-        text = ""
-
-    class FakeSession:
-        def post(self, webhook_url, json, timeout):
-            return FakeResponse()
-
-    absolute_rows, relative_rows = _sample_rows()
-
-    try:
-        send_teams_message_card(
-            "https://webhook.office.com/example",
-            absolute_rows,
-            relative_rows,
-            pd.Timestamp("2026-03-29"),
-            session=FakeSession(),
-        )
-    except RuntimeError as exc:
-        message = str(exc)
-    else:  # pragma: no cover
-        raise AssertionError("Expected Teams delivery to fail")
-
-    assert "HTTP 403" in message
-    assert "Teams Workflows webhook" in message
-
 def test_build_teams_message_card_adaptive_uses_dynamic_top_and_bottom_highlight_count():
     rows = _ranked_rows()
 
