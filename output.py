@@ -207,7 +207,7 @@ def build_rich_table(
         bottom_n=bottom_n,
         include_benchmark=include_benchmark,
     )
-    table.add_column("Fund", style="bold")
+    table.add_column("Fund", style="bold", overflow="fold", min_width=24)
     table.add_column("Style")
     for period in PERIODS:
         label = f"{period} (p.a.)" if period in {"3Y", "5Y"} else period

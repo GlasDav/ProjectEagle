@@ -169,6 +169,41 @@ def test_build_teams_message_card_adaptive_includes_style_column():
     assert fund_row[1]["items"][0]["text"] == "Growth"
 
 
+def test_build_teams_message_card_adaptive_headline_uses_benchmark_latest_nav_date():
+    absolute_rows, relative_rows = _sample_rows()
+    absolute_rows[0]["latest_date"] = pd.Timestamp("2026-03-28")
+
+    payload = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+    )
+
+    content = payload["attachments"][0]["content"]
+    body = content["body"]
+
+    assert payload["summary"] == "Australian Equity Fund Scorecard | 2026-03-28"
+    assert body[0]["text"] == "Australian Equity Fund Scorecard | 2026-03-28"
+    assert body[-2]["text"].startswith("As at 2026-03-28.")
+
+
+def test_build_teams_message_card_legacy_headline_uses_benchmark_latest_nav_date():
+    absolute_rows, relative_rows = _sample_rows()
+    absolute_rows[0]["latest_date"] = pd.Timestamp("2026-03-28")
+
+    payload = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://webhook.office.com/example",
+    )
+
+    assert payload["summary"] == "Australian Equity Fund Scorecard | 2026-03-28"
+    assert payload["title"] == "Australian Equity Fund Scorecard | 2026-03-28"
+    assert payload["sections"][-1]["title"] == "Full performance table (as at 2026-03-28)"
+
+
 def test_build_teams_message_card_adaptive_uses_dynamic_top_and_bottom_highlight_count():
     rows = _ranked_rows()
 
