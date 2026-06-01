@@ -32,11 +32,23 @@ def _row_is_stale(row: dict) -> bool:
     return bool(row.get("is_stale", row.get("stale_days", 0) > 0))
 
 
+def _measurement_date(absolute_rows: list[dict], as_of_date) -> pd.Timestamp:
+    benchmark = next((row for row in absolute_rows if row.get("is_benchmark")), None)
+    latest_date = None if benchmark is None else benchmark.get("latest_date")
+    if latest_date is not None:
+        return pd.Timestamp(latest_date)
+    return pd.Timestamp(as_of_date)
+
+
+def _format_report_date(value) -> str:
+    return f"{pd.Timestamp(value):%Y-%m-%d}"
+
+
 def _format_fund_label(row: dict) -> str:
     label = str(row["Fund"])
     if row.get("is_disabled"):
         return f"{label} ({row.get('disabled_reason') or 'Source pending'})"
-    if _row_is_stale(row) and row.get("latest_date") is not None:
+    if row.get("latest_date") is not None and int(row.get("stale_days") or 0) > 0:
         label = f"{label} (as of {pd.Timestamp(row['latest_date']):%Y-%m-%d})"
     return label
 
@@ -52,6 +64,10 @@ def _is_legacy_connector_webhook(webhook_url: str | None) -> bool:
     host = (parsed.netloc or "").casefold()
     path = (parsed.path or "").casefold()
     return "webhook.office.com" in host or "/incomingwebhook/" in path
+
+
+def teams_webhook_payload_mode(webhook_url: str | None) -> str:
+    return "legacy MessageCard" if _is_legacy_connector_webhook(webhook_url) else "Adaptive Card"
 
 
 def _text_block(text: str, *, weight: str | None = None, size: str | None = None, color: str | None = None, wrap: bool = True) -> dict[str, Any]:
@@ -101,25 +117,6 @@ def _highlight_cell_style(highlight: PerformanceHighlight | None) -> str | None:
     if highlight == HIGHLIGHT_BOTTOM:
         return "attention"
     return None
-
-
-def _table_rows_with_benchmark_absolute(absolute_rows: list[dict], relative_rows: list[dict]) -> list[dict]:
-    benchmark = next((row for row in absolute_rows if row.get("is_benchmark")), None)
-    rows: list[dict] = []
-    if benchmark is not None:
-        rows.append(
-            {
-                "Fund": benchmark["Fund"],
-                "Style": benchmark.get("Style", ""),
-                "is_benchmark": True,
-                "error": benchmark.get("error", False),
-                "stale_days": benchmark.get("stale_days", 0),
-                "latest_date": benchmark.get("latest_date"),
-                **{period: benchmark.get(period) for period in PERIODS},
-            }
-        )
-    rows.extend(relative_rows)
-    return rows
 
 
 def _average_by_style(rows: list[dict], period: str) -> list[dict[str, object]]:
@@ -359,7 +356,8 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
     best_relative = snapshot["best_relative"]
-    table_rows_source = _table_rows_with_benchmark_absolute(absolute_rows, relative_rows)
+    report_date = _measurement_date(absolute_rows, as_of_date)
+    report_date_label = _format_report_date(report_date)
 
     benchmark_text = (
         f"MTD: {_format_percent(benchmark.get('MTD'))}  \n12M: {_format_percent(benchmark.get('12M'))}  \n3Y p.a.: {_format_percent(benchmark.get('3Y'))}"
@@ -389,7 +387,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
         {"title": "Stale sources", "value": str(snapshot["stale_count"])},
     ]
 
-    table = _build_adaptive_table(table_rows_source)
+    relative_table = _build_adaptive_table(relative_rows)
 
     card_content = {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -397,7 +395,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
         "version": "1.5",
         "msteams": {"width": "Full"},
         "body": [
-            _text_block(f"Australian Equity Fund Scorecard | {pd.Timestamp(as_of_date):%Y-%m-%d}", weight="Bolder", size="Large"),
+            _text_block(f"Australian Equity Fund Scorecard | {report_date_label}", weight="Bolder", size="Large"),
             _text_block(
                 "All figures are total return. Relative highlights are measured against the S&P/ASX 200 Accumulation benchmark.",
                 color="Accent",
@@ -419,19 +417,19 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
             },
             _text_block("Top 12M funds", weight="Bolder", size="Medium"),
             _text_block(top_funds),
-            _text_block("Full performance table", weight="Bolder", size="Medium"),
+            _text_block("Relative performance table", weight="Bolder", size="Medium"),
             _text_block(
-                f"As at {pd.Timestamp(as_of_date):%Y-%m-%d}. The benchmark row shows absolute benchmark total returns. "
-                "Fund rows show excess returns versus the benchmark, and the Average row is the simple mean of live funds."
+                f"As at {report_date_label}. Fund rows show excess returns versus the benchmark, "
+                "and the Average row is the simple mean of live funds."
             ),
-            table,
+            relative_table,
             *_adaptive_competitor_set_blocks(competitor_sets),
         ],
     }
 
     return {
         "type": "message",
-        "summary": f"Australian Equity Fund Scorecard | {pd.Timestamp(as_of_date):%Y-%m-%d}",
+        "summary": f"Australian Equity Fund Scorecard | {report_date_label}",
         "attachments": [
             {
                 "contentType": "application/vnd.microsoft.card.adaptive",
@@ -447,7 +445,8 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
     best_relative = snapshot["best_relative"]
-    table_rows_source = _table_rows_with_benchmark_absolute(absolute_rows, relative_rows)
+    report_date = _measurement_date(absolute_rows, as_of_date)
+    report_date_label = _format_report_date(report_date)
 
     benchmark_text = (
         f"MTD: {_format_percent(benchmark.get('MTD'))}  \n12M: {_format_percent(benchmark.get('12M'))}  \n3Y p.a.: {_format_percent(benchmark.get('3Y'))}"
@@ -470,7 +469,7 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
         else "No 12M excess-return leader is available."
     )
 
-    table_text = _build_plaintext_table(table_rows_source)
+    relative_table_text = _build_plaintext_table(relative_rows)
 
     sections = [
         {
@@ -489,12 +488,11 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
         {"title": "Style lens", "text": str(snapshot["style_commentary"]), "markdown": True},
         {"title": "Top 12M funds", "text": top_funds, "markdown": True},
         {
-            "title": f"Full performance table (as at {pd.Timestamp(as_of_date):%Y-%m-%d})",
+            "title": f"Relative performance table (as at {report_date_label})",
             "text": (
-                "Benchmark row shows absolute benchmark total returns. "
                 "Fund rows show excess returns versus the benchmark. "
                 "Average row is the simple mean of live funds.\n\n"
-                f"{table_text}"
+                f"{relative_table_text}"
             ),
             "markdown": True,
         },
@@ -515,8 +513,8 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
         "@type": "MessageCard",
         "@context": "http://schema.org/extensions",
         "themeColor": "1F6A5B",
-        "summary": f"Australian Equity Fund Scorecard | {pd.Timestamp(as_of_date):%Y-%m-%d}",
-        "title": f"Australian Equity Fund Scorecard | {pd.Timestamp(as_of_date):%Y-%m-%d}",
+        "summary": f"Australian Equity Fund Scorecard | {report_date_label}",
+        "title": f"Australian Equity Fund Scorecard | {report_date_label}",
         "text": "All figures are total return. Relative highlights are measured against the S&P/ASX 200 Accumulation benchmark.",
         "sections": sections,
     }
@@ -548,5 +546,13 @@ def send_teams_message_card(
     if response.status_code >= 400:
         body = response.text.strip()
         snippet = body[:500] if body else "<empty response body>"
-        raise RuntimeError(f"Teams webhook returned HTTP {response.status_code}: {snippet}")
+        guidance = ""
+        if response.status_code in {401, 403}:
+            mode = teams_webhook_payload_mode(webhook_url)
+            guidance = (
+                f" Payload mode was {mode}. Verify the GitHub secret has the current Teams webhook URL, "
+                "the workflow/connector is enabled, and the posting identity still has access to the channel. "
+                "If the URL is a legacy connector URL, plan migration to a Teams Workflows webhook."
+            )
+        raise RuntimeError(f"Teams webhook returned HTTP {response.status_code}: {snippet}.{guidance}")
     return payload
