@@ -204,6 +204,72 @@ def test_build_teams_message_card_legacy_headline_uses_benchmark_latest_nav_date
     assert payload["sections"][-1]["title"] == "Relative performance table (as at 2026-03-28)"
 
 
+def _walk_adaptive_nodes(value):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_adaptive_nodes(child)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_adaptive_nodes(item)
+
+
+def test_adaptive_card_column_widths_are_strings():
+    absolute_rows, relative_rows = _sample_rows()
+    payloads = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+        competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows(4)}],
+    )
+
+    widths = []
+    for payload in payloads:
+        content = payload["attachments"][0]["content"]
+        for node in _walk_adaptive_nodes(content):
+            if "width" in node:
+                widths.append(node["width"])
+
+    assert widths
+    assert all(isinstance(width, str) for width in widths)
+    assert all(width in {"auto", "stretch", "Full"} or width.replace(".", "", 1).isdigit() or width.endswith("px") for width in widths)
+
+
+def test_adaptive_card_tables_do_not_emit_blank_column_definition_rows():
+    absolute_rows, relative_rows = _sample_rows()
+    payloads = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+        competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows(4)}],
+    )
+
+    tables = [
+        node
+        for payload in payloads
+        for node in _walk_adaptive_nodes(payload["attachments"][0]["content"])
+        if node.get("type") == "Table"
+    ]
+
+    assert tables
+    assert all("columns" not in table for table in tables)
+    for table in tables:
+        first_row = table["rows"][0]
+        first_row_text = [cell["items"][0]["text"] for cell in first_row["cells"]]
+        assert first_row_text == [
+            "Fund",
+            "Style",
+            "MTD",
+            "3M",
+            "6M",
+            "12M",
+            "3Y (p.a.)",
+            "5Y (p.a.)",
+        ]
+
+
 def test_teams_payloads_include_relative_and_peer_tables_without_absolute_table():
     absolute_rows, relative_rows = _sample_rows()
     absolute_rows[0]["latest_date"] = pd.Timestamp("2026-03-28")

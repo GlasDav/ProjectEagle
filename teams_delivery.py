@@ -335,16 +335,8 @@ def _build_adaptive_table(
         "firstRowAsHeaders": True,
         "showGridLines": True,
         "gridStyle": "accent",
-        "columns": [
-            {"width": 3.2},
-            {"width": 1.2},
-            {"width": 1.0},
-            {"width": 1.0},
-            {"width": 1.0},
-            {"width": 1.0},
-            {"width": 1.0},
-            {"width": 1.0},
-        ],
+        # Power Automate/Teams renders an extra blank grid row when TableColumnDefinition
+        # entries are included here, so let the renderer auto-size columns.
         "rows": table_rows,
     }
 
