@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from urllib.parse import urlparse
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 import requests
@@ -15,6 +16,8 @@ LEGACY_TOP_MARKER = "\N{LARGE GREEN CIRCLE}"
 LEGACY_BOTTOM_MARKER = "\N{LARGE RED CIRCLE}"
 LEGACY_HIGHLIGHT_LEGEND = "Green circles mark best performers; red circles mark worst performers."
 MAX_TEAMS_CARD_BYTES = 24_000
+ADAPTIVE_MAIN_TABLE_SPLIT_ROW_THRESHOLD = 12
+DEFAULT_TEAMS_POST_DELAY_SECONDS = 1.0
 
 
 class TeamsPayloadList(list):
@@ -393,6 +396,17 @@ def _split_rows_for_size(rows: list[dict], build_payload) -> list[dict[str, Any]
     return [build_payload(chunk_rows, index, chunk_count) for index, chunk_rows in enumerate(chunks, start=1)]
 
 
+
+def _split_rows_for_fixed_card_count(rows: list[dict], card_count: int = 2) -> list[list[dict]]:
+    if not rows:
+        return [[]]
+    if card_count <= 1 or len(rows) <= 1:
+        return [rows]
+
+    chunk_size = (len(rows) + card_count - 1) // card_count
+    return [rows[index : index + chunk_size] for index in range(0, len(rows), chunk_size)]
+
+
 def _adaptive_message_payload(body: list[dict[str, Any]], summary: str) -> dict[str, Any]:
     return {
         "type": "message",
@@ -424,13 +438,24 @@ def _build_adaptive_table_cards(
     summary: str,
     description: str,
     include_benchmark_highlight: bool = False,
+    split_large_table: bool = False,
 ) -> list[dict[str, Any]]:
-    body = [
-        _text_block(title, weight="Bolder", size="Medium"),
-        _text_block(description),
-        _build_adaptive_table(rows, include_benchmark_highlight=include_benchmark_highlight),
-    ]
-    return [_adaptive_message_payload(body, summary)]
+    row_chunks = (
+        _split_rows_for_fixed_card_count(rows)
+        if split_large_table and len(rows) > ADAPTIVE_MAIN_TABLE_SPLIT_ROW_THRESHOLD
+        else [rows]
+    )
+    chunk_count = len(row_chunks)
+    payloads: list[dict[str, Any]] = []
+    for index, chunk_rows in enumerate(row_chunks, start=1):
+        table_title = _table_title(title, index, chunk_count)
+        body = [
+            _text_block(table_title, weight="Bolder", size="Medium"),
+            _text_block(description),
+            _build_adaptive_table(chunk_rows, include_benchmark_highlight=include_benchmark_highlight),
+        ]
+        payloads.append(_adaptive_message_payload(body, summary))
+    return payloads
 
 
 def _build_adaptive_scorecard_card(body: list[dict[str, Any]], summary: str) -> dict[str, Any]:
@@ -508,6 +533,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
                 f"As at {report_date_label}. Fund rows show excess returns versus the benchmark, "
                 "and the Average row is the simple mean of live funds."
             ),
+            split_large_table=True,
         )
     )
     for competitor_set in competitor_sets or []:
@@ -671,6 +697,8 @@ def send_teams_message_card(
     as_of_date,
     competitor_sets: list | None = None,
     session: requests.Session | None = None,
+    post_delay_seconds: float = DEFAULT_TEAMS_POST_DELAY_SECONDS,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> list[dict[str, Any]]:
     payloads = build_teams_message_card(absolute_rows, relative_rows, as_of_date, webhook_url=webhook_url, competitor_sets=competitor_sets)
     http = session or requests.Session()
@@ -684,4 +712,6 @@ def send_teams_message_card(
             raise RuntimeError(
                 f"Teams webhook returned HTTP {response.status_code} for card {index}/{len(payloads)} ({title}): {snippet}.{guidance}"
             )
+        if index < len(payloads) and post_delay_seconds > 0:
+            sleeper(post_delay_seconds)
     return payloads

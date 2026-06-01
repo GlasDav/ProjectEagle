@@ -347,7 +347,7 @@ def test_teams_payloads_include_relative_and_peer_tables_without_absolute_table(
     assert "Benchmark row shows absolute benchmark total returns" not in relative_section["text"]
 
 
-def test_adaptive_cards_keep_large_tables_in_one_message():
+def test_adaptive_main_table_splits_into_two_messages_when_large():
     absolute_rows, _ = _sample_rows()
     relative_rows = _ranked_rows(80)
 
@@ -358,17 +358,19 @@ def test_adaptive_cards_keep_large_tables_in_one_message():
         webhook_url="https://example.com/webhook",
     )
 
-    assert len(payloads) == 2
-    table = payloads[1]["attachments"][0]["content"]["body"][-1]
-    assert len(_adaptive_table_rows(table)) == 81
+    assert len(payloads) == 3
+    first_table = payloads[1]["attachments"][0]["content"]["body"][-1]
+    second_table = payloads[2]["attachments"][0]["content"]["body"][-1]
+    assert len(_adaptive_table_rows(first_table)) == 41
+    assert len(_adaptive_table_rows(second_table)) == 41
     titles = [
         block.get("text")
         for payload in payloads
         for block in payload["attachments"][0]["content"]["body"]
         if block.get("type") == "TextBlock"
     ]
-    assert "Relative performance table" in titles
-    assert not any(str(title).startswith("Relative performance table (") for title in titles)
+    assert "Relative performance table (1/2)" in titles
+    assert "Relative performance table (2/2)" in titles
 
 
 def test_adaptive_split_cards_only_include_scorecard_intro_once():
@@ -384,33 +386,10 @@ def test_adaptive_split_cards_only_include_scorecard_intro_once():
 
     bodies = [payload["attachments"][0]["content"]["body"] for payload in payloads]
 
-    assert len(payloads) == 2
+    assert len(payloads) == 3
     assert bodies[0][0]["text"] == "Australian Equity Fund Scorecard | 2026-03-29"
-    assert bodies[1][0]["text"] == "Relative performance table"
-    assert sum(
-        1
-        for body in bodies
-        for block in body
-        if block.get("type") == "TextBlock" and block.get("text") == "Australian Equity Fund Scorecard | 2026-03-29"
-    ) == 1
-
-
-def test_adaptive_split_cards_only_include_scorecard_intro_once():
-    absolute_rows, _ = _sample_rows()
-    relative_rows = _ranked_rows(80)
-
-    payloads = build_teams_message_card(
-        absolute_rows,
-        relative_rows,
-        pd.Timestamp("2026-03-29"),
-        webhook_url="https://example.com/webhook",
-    )
-
-    bodies = [payload["attachments"][0]["content"]["body"] for payload in payloads]
-
-    assert len(payloads) > 1
-    assert bodies[0][0]["text"] == "Australian Equity Fund Scorecard | 2026-03-29"
-    assert all(body[0]["text"].startswith("Relative performance table (") for body in bodies[1:])
+    assert bodies[1][0]["text"] == "Relative performance table (1/2)"
+    assert bodies[2][0]["text"] == "Relative performance table (2/2)"
     assert sum(
         1
         for body in bodies
@@ -462,6 +441,7 @@ def test_send_teams_message_card_posts_each_card_and_reports_failing_card():
             pd.Timestamp("2026-03-29"),
             competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows()}],
             session=session,
+            sleeper=lambda _seconds: None,
         )
     except RuntimeError as exc:
         message = str(exc)
@@ -474,6 +454,50 @@ def test_send_teams_message_card_posts_each_card_and_reports_failing_card():
     assert "Competitors" in message
     assert "Payload mode was legacy MessageCard" in message
     assert "workflow/connector is enabled" in message
+
+
+def test_send_teams_message_card_posts_payloads_in_order_with_delays():
+    class FakeResponse:
+        status_code = 200
+        text = ""
+
+    class FakeSession:
+        def __init__(self):
+            self.posts = []
+
+        def post(self, webhook_url, json, timeout):
+            self.posts.append(json)
+            return FakeResponse()
+
+    absolute_rows, _ = _sample_rows()
+    relative_rows = _ranked_rows(14)
+    session = FakeSession()
+    delays = []
+
+    payloads = send_teams_message_card(
+        "https://example.com/webhook",
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        competitor_sets=[
+            {"id": "long_short", "title": "Long-short funds", "rows": _ranked_rows(2)},
+            *_competitor_sets(),
+        ],
+        session=session,
+        post_delay_seconds=0.25,
+        sleeper=delays.append,
+    )
+    posted_titles = [post["attachments"][0]["content"]["body"][0]["text"] for post in session.posts]
+
+    assert payloads == session.posts
+    assert posted_titles == [
+        "Australian Equity Fund Scorecard | 2026-03-29",
+        "Relative performance table (1/2)",
+        "Relative performance table (2/2)",
+        "Long-short funds",
+        "Absolute return funds",
+    ]
+    assert delays == [0.25, 0.25, 0.25, 0.25]
 
 
 def test_teams_webhook_payload_mode_identifies_legacy_and_adaptive_urls():
