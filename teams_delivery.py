@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from urllib.parse import urlparse
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 import requests
@@ -15,6 +16,8 @@ LEGACY_TOP_MARKER = "\N{LARGE GREEN CIRCLE}"
 LEGACY_BOTTOM_MARKER = "\N{LARGE RED CIRCLE}"
 LEGACY_HIGHLIGHT_LEGEND = "Green circles mark best performers; red circles mark worst performers."
 MAX_TEAMS_CARD_BYTES = 24_000
+ADAPTIVE_MAIN_TABLE_SPLIT_ROW_THRESHOLD = 12
+DEFAULT_TEAMS_POST_DELAY_SECONDS = 1.0
 
 
 class TeamsPayloadList(list):
@@ -81,7 +84,16 @@ def teams_webhook_payload_mode(webhook_url: str | None) -> str:
     return "legacy MessageCard" if _is_legacy_connector_webhook(webhook_url) else "Adaptive Card"
 
 
-def _text_block(text: str, *, weight: str | None = None, size: str | None = None, color: str | None = None, wrap: bool = True) -> dict[str, Any]:
+def _text_block(
+    text: str,
+    *,
+    weight: str | None = None,
+    size: str | None = None,
+    color: str | None = None,
+    wrap: bool = True,
+    horizontal_alignment: str | None = None,
+    spacing: str | None = None,
+) -> dict[str, Any]:
     block: dict[str, Any] = {"type": "TextBlock", "text": text, "wrap": wrap}
     if weight:
         block["weight"] = weight
@@ -89,6 +101,10 @@ def _text_block(text: str, *, weight: str | None = None, size: str | None = None
         block["size"] = size
     if color:
         block["color"] = color
+    if horizontal_alignment:
+        block["horizontalAlignment"] = horizontal_alignment
+    if spacing:
+        block["spacing"] = spacing
     return block
 
 
@@ -104,13 +120,12 @@ def _value_text_block(
     if error:
         return _text_block("Error", color="Attention")
     if value is None:
-        return _text_block("N/A", color="Accent")
+        return _text_block("N/A")
     if highlight == HIGHLIGHT_TOP:
         return _text_block(_format_percent(value), color="Good", weight="Bolder")
     if highlight == HIGHLIGHT_BOTTOM:
         return _text_block(_format_percent(value), color="Attention", weight="Bolder")
-    color = "Good" if value >= 0 else "Attention"
-    return _text_block(_format_percent(value), color=color)
+    return _text_block(_format_percent(value))
 
 
 def _format_highlighted_percent(value: float | None, highlight: PerformanceHighlight | None = None) -> str:
@@ -120,14 +135,6 @@ def _format_highlighted_percent(value: float | None, highlight: PerformanceHighl
     if highlight == HIGHLIGHT_BOTTOM:
         return f"**{label}** {LEGACY_BOTTOM_MARKER}"
     return label
-
-
-def _highlight_cell_style(highlight: PerformanceHighlight | None) -> str | None:
-    if highlight == HIGHLIGHT_TOP:
-        return "good"
-    if highlight == HIGHLIGHT_BOTTOM:
-        return "attention"
-    return None
 
 
 def _average_by_style(rows: list[dict], period: str) -> list[dict[str, object]]:
@@ -278,6 +285,17 @@ def _competitor_set_rows(competitor_set) -> list[dict]:
     return list(getattr(competitor_set, "rows", []) or [])
 
 
+def _adaptive_table_column(items: list[dict[str, Any]], *, width: str) -> dict[str, Any]:
+    return {"type": "Column", "width": width, "items": items, "verticalContentAlignment": "Center"}
+
+
+def _adaptive_table_row(cells: list[dict[str, Any]], *, separator: bool = False) -> dict[str, Any]:
+    row: dict[str, Any] = {"type": "ColumnSet", "columns": cells, "spacing": "None"}
+    if separator:
+        row["separator"] = True
+    return row
+
+
 def _build_adaptive_table(
     rows_source: list[dict],
     *,
@@ -285,7 +303,16 @@ def _build_adaptive_table(
     bottom_n: int = 3,
     include_benchmark_highlight: bool = False,
 ) -> dict[str, Any]:
+    """Build a Teams-safe table from ColumnSet rows.
+
+    Teams Workflows currently accepts Adaptive Card payloads that contain the
+    newer ``Table`` element, but the Teams renderer can silently drop that
+    element. ColumnSet has much broader Teams support, so the report table is
+    rendered as a header ColumnSet followed by one ColumnSet per data row.
+    """
+
     headers = ["Fund", "Style", *[f"{period} (p.a.)" if period in {"3Y", "5Y"} else period for period in PERIODS]]
+    column_widths = ["360px", "78px", "58px", "58px", "58px", "64px", "76px", "76px"]
     highlights = build_period_highlights(
         rows_source,
         periods=PERIODS,
@@ -293,52 +320,55 @@ def _build_adaptive_table(
         bottom_n=bottom_n,
         include_benchmark=include_benchmark_highlight,
     )
-    table_rows = [
-        {
-            "type": "TableRow",
-            "cells": [{"type": "TableCell", "items": [_text_block(header, weight="Bolder")]} for header in headers],
-        }
+
+    header_cells = [
+        _adaptive_table_column(
+            [
+                _text_block(
+                    header,
+                    weight="Bolder",
+                    wrap=index == 0,
+                    horizontal_alignment="Right" if index >= 2 else None,
+                    spacing="None",
+                )
+            ],
+            width=column_widths[index],
+        )
+        for index, header in enumerate(headers)
     ]
+    items: list[dict[str, Any]] = [_adaptive_table_row(header_cells)]
+
+    if not rows_source:
+        items.append(_text_block("No rows are available for this table.", color="Accent"))
+        return {"type": "Container", "items": items}
 
     for row_index, row in enumerate(rows_source):
         label_block = _text_block(
             _format_fund_label(row),
             weight="Bolder" if row.get("is_benchmark") or row.get("is_average") or _is_firetrail(row) else None,
-            color="Good" if _is_firetrail(row) else None,
+            spacing="None",
         )
         cells = [
-            {"type": "TableCell", "items": [label_block]},
-            {"type": "TableCell", "items": [_text_block(str(row.get("Style") or ""))]},
+            _adaptive_table_column([label_block], width=column_widths[0]),
+            _adaptive_table_column(
+                [_text_block(str(row.get("Style") or ""), horizontal_alignment="Right", wrap=False, spacing="None")],
+                width=column_widths[1],
+            ),
         ]
         for period in PERIODS:
             highlight = highlights.get((row_index, period))
-            value_cell = {
-                "type": "TableCell",
-                "items": [
-                    _value_text_block(
-                        row.get(period),
-                        error=row.get("error", False),
-                        highlight=highlight,
-                    )
-                ],
-            }
-            cell_style = _highlight_cell_style(highlight)
-            if cell_style:
-                value_cell["style"] = cell_style
-            cells.append(
-                value_cell
+            value_block = _value_text_block(
+                row.get(period),
+                error=row.get("error", False),
+                highlight=highlight,
             )
-        table_rows.append({"type": "TableRow", "cells": cells})
+            value_block["horizontalAlignment"] = "Right"
+            value_block["wrap"] = False
+            value_block["spacing"] = "None"
+            cells.append(_adaptive_table_column([value_block], width=column_widths[len(cells)]))
+        items.append(_adaptive_table_row(cells, separator=True))
 
-    return {
-        "type": "Table",
-        "firstRowAsHeaders": True,
-        "showGridLines": True,
-        "gridStyle": "accent",
-        # Power Automate/Teams renders an extra blank grid row when TableColumnDefinition
-        # entries are included here, so let the renderer auto-size columns.
-        "rows": table_rows,
-    }
+    return {"type": "Container", "items": items}
 
 
 def _payload_size(payload: dict[str, Any]) -> int:
@@ -364,6 +394,17 @@ def _split_rows_for_size(rows: list[dict], build_payload) -> list[dict[str, Any]
 
     chunk_count = len(chunks)
     return [build_payload(chunk_rows, index, chunk_count) for index, chunk_rows in enumerate(chunks, start=1)]
+
+
+
+def _split_rows_for_fixed_card_count(rows: list[dict], card_count: int = 2) -> list[list[dict]]:
+    if not rows:
+        return [[]]
+    if card_count <= 1 or len(rows) <= 1:
+        return [rows]
+
+    chunk_size = (len(rows) + card_count - 1) // card_count
+    return [rows[index : index + chunk_size] for index in range(0, len(rows), chunk_size)]
 
 
 def _adaptive_message_payload(body: list[dict[str, Any]], summary: str) -> dict[str, Any]:
@@ -396,22 +437,29 @@ def _build_adaptive_table_cards(
     title: str,
     summary: str,
     description: str,
-    intro_body: list[dict[str, Any]] | None = None,
     include_benchmark_highlight: bool = False,
+    split_large_table: bool = False,
 ) -> list[dict[str, Any]]:
-    def build_payload(chunk_rows: list[dict], chunk_index: int, chunk_count: int) -> dict[str, Any]:
-        table_title = _table_title(title, chunk_index, chunk_count)
-        body = [*(intro_body or [])]
-        body.extend(
-            [
-                _text_block(table_title, weight="Bolder", size="Medium"),
-                _text_block(description),
-                _build_adaptive_table(chunk_rows, include_benchmark_highlight=include_benchmark_highlight),
-            ]
-        )
-        return _adaptive_message_payload(body, summary)
+    row_chunks = (
+        _split_rows_for_fixed_card_count(rows)
+        if split_large_table and len(rows) > ADAPTIVE_MAIN_TABLE_SPLIT_ROW_THRESHOLD
+        else [rows]
+    )
+    chunk_count = len(row_chunks)
+    payloads: list[dict[str, Any]] = []
+    for index, chunk_rows in enumerate(row_chunks, start=1):
+        table_title = _table_title(title, index, chunk_count)
+        body = [
+            _text_block(table_title, weight="Bolder", size="Medium"),
+            _text_block(description),
+            _build_adaptive_table(chunk_rows, include_benchmark_highlight=include_benchmark_highlight),
+        ]
+        payloads.append(_adaptive_message_payload(body, summary))
+    return payloads
 
-    return _split_rows_for_size(rows, build_payload)
+
+def _build_adaptive_scorecard_card(body: list[dict[str, Any]], summary: str) -> dict[str, Any]:
+    return _adaptive_message_payload(body, summary)
 
 
 def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, competitor_sets: list | None = None) -> list[dict[str, Any]]:
@@ -475,15 +523,18 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
         _text_block(top_funds),
     ]
 
-    payloads = _build_adaptive_table_cards(
-        rows=relative_rows,
-        title="Relative performance table",
-        summary=summary,
-        description=(
-            f"As at {report_date_label}. Fund rows show excess returns versus the benchmark, "
-            "and the Average row is the simple mean of live funds."
-        ),
-        intro_body=intro_body,
+    payloads = TeamsPayloadList([_build_adaptive_scorecard_card(intro_body, summary)])
+    payloads.extend(
+        _build_adaptive_table_cards(
+            rows=relative_rows,
+            title="Relative performance table",
+            summary=summary,
+            description=(
+                f"As at {report_date_label}. Fund rows show excess returns versus the benchmark, "
+                "and the Average row is the simple mean of live funds."
+            ),
+            split_large_table=True,
+        )
     )
     for competitor_set in competitor_sets or []:
         payloads.extend(
@@ -495,7 +546,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
                 include_benchmark_highlight=False,
             )
         )
-    return TeamsPayloadList(payloads)
+    return payloads
 
 
 def _legacy_payload(title: str, summary: str, text: str, sections: list[dict[str, Any]]) -> dict[str, Any]:
@@ -623,8 +674,8 @@ def build_teams_message_card(
 def _payload_label(payload: dict[str, Any]) -> str:
     if "attachments" in payload:
         body = payload.get("attachments", [{}])[0].get("content", {}).get("body", [])
-        if len(body) >= 3 and isinstance(body[-3], dict) and body[-3].get("type") == "TextBlock":
-            return str(body[-3].get("text") or payload.get("summary") or "Teams card")
+        if body and isinstance(body[0], dict) and body[0].get("type") == "TextBlock":
+            return str(body[0].get("text") or payload.get("summary") or "Teams card")
     return str(payload.get("title") or payload.get("summary") or "Teams card")
 
 
@@ -646,6 +697,8 @@ def send_teams_message_card(
     as_of_date,
     competitor_sets: list | None = None,
     session: requests.Session | None = None,
+    post_delay_seconds: float = DEFAULT_TEAMS_POST_DELAY_SECONDS,
+    sleeper: Callable[[float], None] = time.sleep,
 ) -> list[dict[str, Any]]:
     payloads = build_teams_message_card(absolute_rows, relative_rows, as_of_date, webhook_url=webhook_url, competitor_sets=competitor_sets)
     http = session or requests.Session()
@@ -659,4 +712,6 @@ def send_teams_message_card(
             raise RuntimeError(
                 f"Teams webhook returned HTTP {response.status_code} for card {index}/{len(payloads)} ({title}): {snippet}.{guidance}"
             )
+        if index < len(payloads) and post_delay_seconds > 0:
+            sleeper(post_delay_seconds)
     return payloads
