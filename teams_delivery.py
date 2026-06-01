@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from urllib.parse import urlparse
 from typing import Any
@@ -13,6 +14,16 @@ from table_highlighting import HIGHLIGHT_BOTTOM, HIGHLIGHT_TOP, PerformanceHighl
 LEGACY_TOP_MARKER = "\N{LARGE GREEN CIRCLE}"
 LEGACY_BOTTOM_MARKER = "\N{LARGE RED CIRCLE}"
 LEGACY_HIGHLIGHT_LEGEND = "Green circles mark best performers; red circles mark worst performers."
+MAX_TEAMS_CARD_BYTES = 24_000
+
+
+class TeamsPayloadList(list):
+    """List of Teams payloads with first-card mapping access for older callers."""
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            return super().__getitem__(0)[item]
+        return super().__getitem__(item)
 
 
 def load_teams_webhook_url(webhook_url: str | None = None) -> str:
@@ -338,26 +349,87 @@ def _build_adaptive_table(
     }
 
 
-def _adaptive_competitor_set_blocks(competitor_sets: list | None) -> list[dict[str, Any]]:
-    blocks: list[dict[str, Any]] = []
-    for competitor_set in competitor_sets or []:
-        blocks.append(_text_block(_competitor_set_title(competitor_set), weight="Bolder", size="Medium"))
-        blocks.append(
-            _build_adaptive_table(
-                _competitor_set_rows(competitor_set),
-                include_benchmark_highlight=False,
-            )
+def _payload_size(payload: dict[str, Any]) -> int:
+    return len(json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8"))
+
+
+def _split_rows_for_size(rows: list[dict], build_payload) -> list[dict[str, Any]]:
+    if not rows:
+        return [build_payload([], 1, 1)]
+
+    chunks: list[list[dict]] = []
+    chunk: list[dict] = []
+    for row in rows:
+        candidate = [*chunk, row]
+        # Use a deliberately high chunk count while sizing so final titles are no longer than the probe title.
+        if chunk and _payload_size(build_payload(candidate, len(chunks) + 1, 99)) > MAX_TEAMS_CARD_BYTES:
+            chunks.append(chunk)
+            chunk = [row]
+        else:
+            chunk = candidate
+    if chunk:
+        chunks.append(chunk)
+
+    chunk_count = len(chunks)
+    return [build_payload(chunk_rows, index, chunk_count) for index, chunk_rows in enumerate(chunks, start=1)]
+
+
+def _adaptive_message_payload(body: list[dict[str, Any]], summary: str) -> dict[str, Any]:
+    return {
+        "type": "message",
+        "summary": summary,
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "contentUrl": None,
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.5",
+                    "msteams": {"width": "Full"},
+                    "body": body,
+                },
+            }
+        ],
+    }
+
+
+def _table_title(title: str, chunk_index: int, chunk_count: int) -> str:
+    return title if chunk_count == 1 else f"{title} ({chunk_index}/{chunk_count})"
+
+
+def _build_adaptive_table_cards(
+    *,
+    rows: list[dict],
+    title: str,
+    summary: str,
+    description: str,
+    intro_body: list[dict[str, Any]] | None = None,
+    include_benchmark_highlight: bool = False,
+) -> list[dict[str, Any]]:
+    def build_payload(chunk_rows: list[dict], chunk_index: int, chunk_count: int) -> dict[str, Any]:
+        table_title = _table_title(title, chunk_index, chunk_count)
+        body = [*(intro_body or [])]
+        body.extend(
+            [
+                _text_block(table_title, weight="Bolder", size="Medium"),
+                _text_block(description),
+                _build_adaptive_table(chunk_rows, include_benchmark_highlight=include_benchmark_highlight),
+            ]
         )
-    return blocks
+        return _adaptive_message_payload(body, summary)
+
+    return _split_rows_for_size(rows, build_payload)
 
 
-def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, competitor_sets: list | None = None) -> dict[str, Any]:
+def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, competitor_sets: list | None = None) -> list[dict[str, Any]]:
     snapshot = _snapshot(absolute_rows, relative_rows)
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
     best_relative = snapshot["best_relative"]
     report_date = _measurement_date(absolute_rows, as_of_date)
     report_date_label = _format_report_date(report_date)
+    summary = f"Australian Equity Fund Scorecard | {report_date_label}"
 
     benchmark_text = (
         f"MTD: {_format_percent(benchmark.get('MTD'))}  \n12M: {_format_percent(benchmark.get('12M'))}  \n3Y p.a.: {_format_percent(benchmark.get('3Y'))}"
@@ -386,67 +458,100 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
         {"title": "Benchmark 12M", "value": _format_percent(None if benchmark is None else benchmark.get("12M"))},
         {"title": "Stale sources", "value": str(snapshot["stale_count"])},
     ]
+    intro_body = [
+        _text_block(summary, weight="Bolder", size="Large"),
+        _text_block(
+            "All figures are total return. Relative highlights are measured against the S&P/ASX 200 Accumulation benchmark.",
+            color="Accent",
+        ),
+        {"type": "FactSet", "facts": facts},
+        {
+            "type": "Container",
+            "style": "emphasis",
+            "items": [
+                _text_block("Benchmark", weight="Bolder"),
+                _text_block(benchmark_text),
+                _text_block("Best 12M total return", weight="Bolder", size="Medium"),
+                _text_block(best_absolute_text),
+                _text_block("Best 12M excess return", weight="Bolder", size="Medium"),
+                _text_block(best_relative_text),
+                _text_block("Style lens", weight="Bolder", size="Medium"),
+                _text_block(str(snapshot["style_commentary"])),
+            ],
+        },
+        _text_block("Top 12M funds", weight="Bolder", size="Medium"),
+        _text_block(top_funds),
+    ]
 
-    relative_table = _build_adaptive_table(relative_rows)
+    payloads = _build_adaptive_table_cards(
+        rows=relative_rows,
+        title="Relative performance table",
+        summary=summary,
+        description=(
+            f"As at {report_date_label}. Fund rows show excess returns versus the benchmark, "
+            "and the Average row is the simple mean of live funds."
+        ),
+        intro_body=intro_body,
+    )
+    for competitor_set in competitor_sets or []:
+        payloads.extend(
+            _build_adaptive_table_cards(
+                rows=_competitor_set_rows(competitor_set),
+                title=_competitor_set_title(competitor_set),
+                summary=summary,
+                description=f"Peer-set table as at {report_date_label}.",
+                include_benchmark_highlight=False,
+            )
+        )
+    return TeamsPayloadList(payloads)
 
-    card_content = {
-        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-        "type": "AdaptiveCard",
-        "version": "1.5",
-        "msteams": {"width": "Full"},
-        "body": [
-            _text_block(f"Australian Equity Fund Scorecard | {report_date_label}", weight="Bolder", size="Large"),
-            _text_block(
-                "All figures are total return. Relative highlights are measured against the S&P/ASX 200 Accumulation benchmark.",
-                color="Accent",
-            ),
-            {"type": "FactSet", "facts": facts},
-            {
-                "type": "Container",
-                "style": "emphasis",
-                "items": [
-                    _text_block("Benchmark", weight="Bolder"),
-                    _text_block(benchmark_text),
-                    _text_block("Best 12M total return", weight="Bolder", size="Medium"),
-                    _text_block(best_absolute_text),
-                    _text_block("Best 12M excess return", weight="Bolder", size="Medium"),
-                    _text_block(best_relative_text),
-                    _text_block("Style lens", weight="Bolder", size="Medium"),
-                    _text_block(str(snapshot["style_commentary"])),
-                ],
-            },
-            _text_block("Top 12M funds", weight="Bolder", size="Medium"),
-            _text_block(top_funds),
-            _text_block("Relative performance table", weight="Bolder", size="Medium"),
-            _text_block(
-                f"As at {report_date_label}. Fund rows show excess returns versus the benchmark, "
-                "and the Average row is the simple mean of live funds."
-            ),
-            relative_table,
-            *_adaptive_competitor_set_blocks(competitor_sets),
-        ],
-    }
 
+def _legacy_payload(title: str, summary: str, text: str, sections: list[dict[str, Any]]) -> dict[str, Any]:
     return {
-        "type": "message",
-        "summary": f"Australian Equity Fund Scorecard | {report_date_label}",
-        "attachments": [
-            {
-                "contentType": "application/vnd.microsoft.card.adaptive",
-                "contentUrl": None,
-                "content": card_content,
-            }
-        ],
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": "1F6A5B",
+        "summary": summary,
+        "title": title,
+        "text": text,
+        "sections": sections,
     }
 
 
-def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, competitor_sets: list | None = None) -> dict[str, Any]:
+def _build_legacy_table_cards(
+    *,
+    rows: list[dict],
+    title: str,
+    summary: str,
+    text: str,
+    description: str,
+    intro_sections: list[dict[str, Any]] | None = None,
+    include_benchmark_highlight: bool = False,
+) -> list[dict[str, Any]]:
+    def build_payload(chunk_rows: list[dict], chunk_index: int, chunk_count: int) -> dict[str, Any]:
+        table_title = _table_title(title, chunk_index, chunk_count)
+        sections = [*(intro_sections or [])]
+        sections.append(
+            {
+                "title": table_title,
+                "text": f"{description}\n\n{_build_plaintext_table(chunk_rows, include_benchmark_highlight=include_benchmark_highlight)}",
+                "markdown": True,
+            }
+        )
+        return _legacy_payload(table_title if not intro_sections else summary, summary, text, sections)
+
+    return _split_rows_for_size(rows, build_payload)
+
+
+def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: list[dict], as_of_date, competitor_sets: list | None = None) -> list[dict[str, Any]]:
     snapshot = _snapshot(absolute_rows, relative_rows)
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
     best_relative = snapshot["best_relative"]
     report_date = _measurement_date(absolute_rows, as_of_date)
     report_date_label = _format_report_date(report_date)
+    summary = f"Australian Equity Fund Scorecard | {report_date_label}"
+    text = "All figures are total return. Relative highlights are measured against the S&P/ASX 200 Accumulation benchmark."
 
     benchmark_text = (
         f"MTD: {_format_percent(benchmark.get('MTD'))}  \n12M: {_format_percent(benchmark.get('12M'))}  \n3Y p.a.: {_format_percent(benchmark.get('3Y'))}"
@@ -469,9 +574,7 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
         else "No 12M excess-return leader is available."
     )
 
-    relative_table_text = _build_plaintext_table(relative_rows)
-
-    sections = [
+    intro_sections = [
         {
             "activityTitle": "Daily total-return snapshot",
             "facts": [
@@ -487,37 +590,28 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
         {"title": "Best 12M excess return", "text": best_relative_text, "markdown": True},
         {"title": "Style lens", "text": str(snapshot["style_commentary"]), "markdown": True},
         {"title": "Top 12M funds", "text": top_funds, "markdown": True},
-        {
-            "title": f"Relative performance table (as at {report_date_label})",
-            "text": (
-                "Fund rows show excess returns versus the benchmark. "
-                "Average row is the simple mean of live funds.\n\n"
-                f"{relative_table_text}"
-            ),
-            "markdown": True,
-        },
     ]
-    for competitor_set in competitor_sets or []:
-        sections.append(
-            {
-                "title": _competitor_set_title(competitor_set),
-                "text": _build_plaintext_table(
-                    _competitor_set_rows(competitor_set),
-                    include_benchmark_highlight=False,
-                ),
-                "markdown": True,
-            }
-        )
 
-    return {
-        "@type": "MessageCard",
-        "@context": "http://schema.org/extensions",
-        "themeColor": "1F6A5B",
-        "summary": f"Australian Equity Fund Scorecard | {report_date_label}",
-        "title": f"Australian Equity Fund Scorecard | {report_date_label}",
-        "text": "All figures are total return. Relative highlights are measured against the S&P/ASX 200 Accumulation benchmark.",
-        "sections": sections,
-    }
+    payloads = _build_legacy_table_cards(
+        rows=relative_rows,
+        title=f"Relative performance table (as at {report_date_label})",
+        summary=summary,
+        text=text,
+        description="Fund rows show excess returns versus the benchmark. Average row is the simple mean of live funds.",
+        intro_sections=intro_sections,
+    )
+    for competitor_set in competitor_sets or []:
+        payloads.extend(
+            _build_legacy_table_cards(
+                rows=_competitor_set_rows(competitor_set),
+                title=_competitor_set_title(competitor_set),
+                summary=summary,
+                text=text,
+                description=f"Peer-set table as at {report_date_label}.",
+                include_benchmark_highlight=False,
+            )
+        )
+    return TeamsPayloadList(payloads)
 
 
 def build_teams_message_card(
@@ -526,10 +620,31 @@ def build_teams_message_card(
     as_of_date,
     webhook_url: str | None = None,
     competitor_sets: list | None = None,
-) -> dict[str, Any]:
+) -> list[dict[str, Any]]:
     if _is_legacy_connector_webhook(webhook_url):
         return _build_legacy_teams_message_card(absolute_rows, relative_rows, as_of_date, competitor_sets=competitor_sets)
     return _build_adaptive_teams_message_card(absolute_rows, relative_rows, as_of_date, competitor_sets=competitor_sets)
+
+
+
+
+def _payload_label(payload: dict[str, Any]) -> str:
+    if "attachments" in payload:
+        body = payload.get("attachments", [{}])[0].get("content", {}).get("body", [])
+        if len(body) >= 3 and isinstance(body[-3], dict) and body[-3].get("type") == "TextBlock":
+            return str(body[-3].get("text") or payload.get("summary") or "Teams card")
+    return str(payload.get("title") or payload.get("summary") or "Teams card")
+
+
+def _teams_error_guidance(webhook_url: str, status_code: int) -> str:
+    if status_code not in {401, 403}:
+        return ""
+    mode = teams_webhook_payload_mode(webhook_url)
+    return (
+        f" Payload mode was {mode}. Verify the GitHub secret has the current Teams webhook URL, "
+        "the workflow/connector is enabled, and the posting identity still has access to the channel. "
+        "If the URL is a legacy connector URL, plan migration to a Teams Workflows webhook."
+    )
 
 
 def send_teams_message_card(
@@ -539,20 +654,17 @@ def send_teams_message_card(
     as_of_date,
     competitor_sets: list | None = None,
     session: requests.Session | None = None,
-) -> dict[str, Any]:
-    payload = build_teams_message_card(absolute_rows, relative_rows, as_of_date, webhook_url=webhook_url, competitor_sets=competitor_sets)
+) -> list[dict[str, Any]]:
+    payloads = build_teams_message_card(absolute_rows, relative_rows, as_of_date, webhook_url=webhook_url, competitor_sets=competitor_sets)
     http = session or requests.Session()
-    response = http.post(webhook_url, json=payload, timeout=20)
-    if response.status_code >= 400:
-        body = response.text.strip()
-        snippet = body[:500] if body else "<empty response body>"
-        guidance = ""
-        if response.status_code in {401, 403}:
-            mode = teams_webhook_payload_mode(webhook_url)
-            guidance = (
-                f" Payload mode was {mode}. Verify the GitHub secret has the current Teams webhook URL, "
-                "the workflow/connector is enabled, and the posting identity still has access to the channel. "
-                "If the URL is a legacy connector URL, plan migration to a Teams Workflows webhook."
+    for index, payload in enumerate(payloads, start=1):
+        response = http.post(webhook_url, json=payload, timeout=20)
+        if response.status_code >= 400:
+            body = response.text.strip()
+            snippet = body[:500] if body else "<empty response body>"
+            title = _payload_label(payload)
+            guidance = _teams_error_guidance(webhook_url, response.status_code)
+            raise RuntimeError(
+                f"Teams webhook returned HTTP {response.status_code} for card {index}/{len(payloads)} ({title}): {snippet}.{guidance}"
             )
-        raise RuntimeError(f"Teams webhook returned HTTP {response.status_code}: {snippet}.{guidance}")
-    return payload
+    return payloads
