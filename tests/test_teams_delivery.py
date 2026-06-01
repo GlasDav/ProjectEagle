@@ -395,6 +395,30 @@ def test_adaptive_split_cards_only_include_scorecard_intro_once():
     ) == 1
 
 
+def test_adaptive_split_cards_only_include_scorecard_intro_once():
+    absolute_rows, _ = _sample_rows()
+    relative_rows = _ranked_rows(80)
+
+    payloads = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+    )
+
+    bodies = [payload["attachments"][0]["content"]["body"] for payload in payloads]
+
+    assert len(payloads) > 1
+    assert bodies[0][0]["text"] == "Australian Equity Fund Scorecard | 2026-03-29"
+    assert all(body[0]["text"].startswith("Relative performance table (") for body in bodies[1:])
+    assert sum(
+        1
+        for body in bodies
+        for block in body
+        if block.get("type") == "TextBlock" and block.get("text") == "Australian Equity Fund Scorecard | 2026-03-29"
+    ) == 1
+
+
 def test_build_teams_message_card_labels_rows_with_non_stale_date_offsets():
     absolute_rows, relative_rows = _sample_rows()
     relative_rows[0]["latest_date"] = pd.Timestamp("2026-03-28")
