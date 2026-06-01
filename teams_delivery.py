@@ -81,7 +81,15 @@ def teams_webhook_payload_mode(webhook_url: str | None) -> str:
     return "legacy MessageCard" if _is_legacy_connector_webhook(webhook_url) else "Adaptive Card"
 
 
-def _text_block(text: str, *, weight: str | None = None, size: str | None = None, color: str | None = None, wrap: bool = True) -> dict[str, Any]:
+def _text_block(
+    text: str,
+    *,
+    weight: str | None = None,
+    size: str | None = None,
+    color: str | None = None,
+    wrap: bool = True,
+    horizontal_alignment: str | None = None,
+) -> dict[str, Any]:
     block: dict[str, Any] = {"type": "TextBlock", "text": text, "wrap": wrap}
     if weight:
         block["weight"] = weight
@@ -89,6 +97,8 @@ def _text_block(text: str, *, weight: str | None = None, size: str | None = None
         block["size"] = size
     if color:
         block["color"] = color
+    if horizontal_alignment:
+        block["horizontalAlignment"] = horizontal_alignment
     return block
 
 
@@ -278,6 +288,20 @@ def _competitor_set_rows(competitor_set) -> list[dict]:
     return list(getattr(competitor_set, "rows", []) or [])
 
 
+def _adaptive_table_column(items: list[dict[str, Any]], *, width: str, style: str | None = None) -> dict[str, Any]:
+    column: dict[str, Any] = {"type": "Column", "width": width, "items": items}
+    if style:
+        column["style"] = style
+    return column
+
+
+def _adaptive_table_row(cells: list[dict[str, Any]], *, separator: bool = False) -> dict[str, Any]:
+    row: dict[str, Any] = {"type": "ColumnSet", "columns": cells, "spacing": "Small"}
+    if separator:
+        row["separator"] = True
+    return row
+
+
 def _build_adaptive_table(
     rows_source: list[dict],
     *,
@@ -285,7 +309,16 @@ def _build_adaptive_table(
     bottom_n: int = 3,
     include_benchmark_highlight: bool = False,
 ) -> dict[str, Any]:
+    """Build a Teams-safe table from ColumnSet rows.
+
+    Teams Workflows currently accepts Adaptive Card payloads that contain the
+    newer ``Table`` element, but the Teams renderer can silently drop that
+    element. ColumnSet has much broader Teams support, so the report table is
+    rendered as a header ColumnSet followed by one ColumnSet per data row.
+    """
+
     headers = ["Fund", "Style", *[f"{period} (p.a.)" if period in {"3Y", "5Y"} else period for period in PERIODS]]
+    column_widths = ["stretch", "auto", *["auto" for _ in PERIODS]]
     highlights = build_period_highlights(
         rows_source,
         periods=PERIODS,
@@ -293,12 +326,26 @@ def _build_adaptive_table(
         bottom_n=bottom_n,
         include_benchmark=include_benchmark_highlight,
     )
-    table_rows = [
-        {
-            "type": "TableRow",
-            "cells": [{"type": "TableCell", "items": [_text_block(header, weight="Bolder")]} for header in headers],
-        }
+
+    header_cells = [
+        _adaptive_table_column(
+            [
+                _text_block(
+                    header,
+                    weight="Bolder",
+                    wrap=index < 2,
+                    horizontal_alignment="Right" if index >= 2 else None,
+                )
+            ],
+            width=column_widths[index],
+        )
+        for index, header in enumerate(headers)
     ]
+    items: list[dict[str, Any]] = [_adaptive_table_row(header_cells)]
+
+    if not rows_source:
+        items.append(_text_block("No rows are available for this table.", color="Accent"))
+        return {"type": "Container", "items": items}
 
     for row_index, row in enumerate(rows_source):
         label_block = _text_block(
@@ -307,38 +354,27 @@ def _build_adaptive_table(
             color="Good" if _is_firetrail(row) else None,
         )
         cells = [
-            {"type": "TableCell", "items": [label_block]},
-            {"type": "TableCell", "items": [_text_block(str(row.get("Style") or ""))]},
+            _adaptive_table_column([label_block], width="stretch"),
+            _adaptive_table_column([_text_block(str(row.get("Style") or ""))], width="auto"),
         ]
         for period in PERIODS:
             highlight = highlights.get((row_index, period))
-            value_cell = {
-                "type": "TableCell",
-                "items": [
-                    _value_text_block(
-                        row.get(period),
-                        error=row.get("error", False),
-                        highlight=highlight,
-                    )
-                ],
-            }
-            cell_style = _highlight_cell_style(highlight)
-            if cell_style:
-                value_cell["style"] = cell_style
-            cells.append(
-                value_cell
+            value_block = _value_text_block(
+                row.get(period),
+                error=row.get("error", False),
+                highlight=highlight,
             )
-        table_rows.append({"type": "TableRow", "cells": cells})
+            value_block["horizontalAlignment"] = "Right"
+            cells.append(
+                _adaptive_table_column(
+                    [value_block],
+                    width="auto",
+                    style=_highlight_cell_style(highlight),
+                )
+            )
+        items.append(_adaptive_table_row(cells, separator=True))
 
-    return {
-        "type": "Table",
-        "firstRowAsHeaders": True,
-        "showGridLines": True,
-        "gridStyle": "accent",
-        # Power Automate/Teams renders an extra blank grid row when TableColumnDefinition
-        # entries are included here, so let the renderer auto-size columns.
-        "rows": table_rows,
-    }
+    return {"type": "Container", "items": items}
 
 
 def _payload_size(payload: dict[str, Any]) -> int:
@@ -401,7 +437,7 @@ def _build_adaptive_table_cards(
 ) -> list[dict[str, Any]]:
     def build_payload(chunk_rows: list[dict], chunk_index: int, chunk_count: int) -> dict[str, Any]:
         table_title = _table_title(title, chunk_index, chunk_count)
-        body = [*(intro_body or [])]
+        body = [*(intro_body or [])] if chunk_index == 1 else []
         body.extend(
             [
                 _text_block(table_title, weight="Bolder", size="Medium"),
