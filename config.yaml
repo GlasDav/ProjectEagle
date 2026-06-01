@@ -16,7 +16,7 @@ competitor_sets:
       - "Vinva Australian Equity Alpha Extension Fund"
 
   - id: market_neutral_funds
-    title: "Market neutral funds"
+    title: "Absolute return funds"
     funds:
       - "Firetrail Absolute Return Fund"
       - "Sage Capital Absolute Return Fund"

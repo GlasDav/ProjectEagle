@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
-
 import pandas as pd
 
-from teams_delivery import MAX_TEAMS_CARD_BYTES, build_teams_message_card, send_teams_message_card, teams_webhook_payload_mode
+from teams_delivery import build_teams_message_card, send_teams_message_card, teams_webhook_payload_mode
 
 
 def _sample_rows():
@@ -63,7 +61,7 @@ def _competitor_sets():
     return [
         {
             "id": "market_neutral_funds",
-            "title": "Market neutral funds",
+            "title": "Absolute return funds",
             "rows": [
                 {
                     "Fund": "S&P/ASX 200 Accumulation",
@@ -161,7 +159,7 @@ def test_build_teams_message_card_adaptive_includes_style_column():
         webhook_url="https://example.com/webhook",
     )
 
-    table = payload["attachments"][0]["content"]["body"][-1]
+    table = payload[1]["attachments"][0]["content"]["body"][-1]
     headers = [cell["items"][0]["text"] for cell in _adaptive_table_rows(table)[0]["columns"]]
     fund_row = _adaptive_table_rows(table)[1]["columns"]
 
@@ -185,7 +183,7 @@ def test_build_teams_message_card_adaptive_headline_uses_benchmark_latest_nav_da
 
     assert payload["summary"] == "Australian Equity Fund Scorecard | 2026-03-28"
     assert body[0]["text"] == "Australian Equity Fund Scorecard | 2026-03-28"
-    assert body[-2]["text"].startswith("As at 2026-03-28.")
+    assert payload[1]["attachments"][0]["content"]["body"][1]["text"].startswith("As at 2026-03-28.")
 
 
 def test_build_teams_message_card_legacy_headline_uses_benchmark_latest_nav_date():
@@ -260,8 +258,11 @@ def test_adaptive_card_tables_use_teams_safe_columnsets():
     assert tables
     assert not any(node.get("type") == "Table" for payload in payloads for node in _walk_adaptive_nodes(payload["attachments"][0]["content"]))
     for table in tables:
-        first_row = _adaptive_table_rows(table)[0]
+        rows = _adaptive_table_rows(table)
+        first_row = rows[0]
         first_row_text = [cell["items"][0]["text"] for cell in first_row["columns"]]
+        expected_widths = ["360px", "78px", "58px", "58px", "58px", "64px", "76px", "76px"]
+
         assert first_row_text == [
             "Fund",
             "Style",
@@ -272,6 +273,9 @@ def test_adaptive_card_tables_use_teams_safe_columnsets():
             "3Y (p.a.)",
             "5Y (p.a.)",
         ]
+        assert all(row["spacing"] == "None" for row in rows)
+        assert all([cell["width"] for cell in row["columns"]] == expected_widths for row in rows)
+        assert not any("style" in cell for row in rows for cell in row["columns"])
 
 
 def test_teams_payloads_include_relative_and_peer_tables_without_absolute_table():
@@ -290,6 +294,7 @@ def test_teams_payloads_include_relative_and_peer_tables_without_absolute_table(
         competitor_sets=competitor_sets,
     )
     adaptive_bodies = [payload["attachments"][0]["content"]["body"] for payload in adaptive_payload]
+    adaptive_card_titles = [body[0].get("text") for body in adaptive_bodies]
     adaptive_titles = [
         block.get("text")
         for body in adaptive_bodies
@@ -304,13 +309,18 @@ def test_teams_payloads_include_relative_and_peer_tables_without_absolute_table(
     ]
 
     assert adaptive_payload["summary"] == "Australian Equity Fund Scorecard | 2026-03-28"
+    assert adaptive_card_titles == [
+        "Australian Equity Fund Scorecard | 2026-03-28",
+        "Relative performance table",
+        "Long-short funds",
+        "Absolute return funds",
+    ]
     assert "Relative performance table" in adaptive_titles
     assert "Long-short funds" in adaptive_titles
-    assert "Market neutral funds" in adaptive_titles
+    assert "Absolute return funds" in adaptive_titles
     assert "Full performance table" not in adaptive_titles
-    assert not any("Absolute" in str(title) for title in adaptive_titles if title)
     assert len(adaptive_tables) == 3
-    assert len(adaptive_payload) == 3
+    assert len(adaptive_payload) == 4
     assert _adaptive_table_rows(adaptive_tables[0])[1]["columns"][0]["items"][0]["text"] == "Fund A"
     assert all(
         row["columns"][0]["items"][0]["text"] != "Benchmark"
@@ -331,14 +341,13 @@ def test_teams_payloads_include_relative_and_peer_tables_without_absolute_table(
     assert legacy_payload["title"] == "Australian Equity Fund Scorecard | 2026-03-28"
     assert len(legacy_payload) == 3
     assert "Long-short funds" in legacy_titles
-    assert "Market neutral funds" in legacy_titles
+    assert "Absolute return funds" in legacy_titles
     assert not any(str(title).startswith("Full performance table") for title in legacy_titles)
-    assert not any("Absolute" in str(title) for title in legacy_titles)
     assert "Fund A" in relative_section["text"]
     assert "Benchmark row shows absolute benchmark total returns" not in relative_section["text"]
 
 
-def test_adaptive_cards_split_large_tables_under_size_limit():
+def test_adaptive_cards_keep_large_tables_in_one_message():
     absolute_rows, _ = _sample_rows()
     relative_rows = _ranked_rows(80)
 
@@ -349,18 +358,41 @@ def test_adaptive_cards_split_large_tables_under_size_limit():
         webhook_url="https://example.com/webhook",
     )
 
-    assert len(payloads) > 1
-    assert all(
-        len(json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8")) <= MAX_TEAMS_CARD_BYTES
-        for payload in payloads
-    )
+    assert len(payloads) == 2
+    table = payloads[1]["attachments"][0]["content"]["body"][-1]
+    assert len(_adaptive_table_rows(table)) == 81
     titles = [
         block.get("text")
         for payload in payloads
         for block in payload["attachments"][0]["content"]["body"]
         if block.get("type") == "TextBlock"
     ]
-    assert any(str(title).startswith("Relative performance table (") for title in titles)
+    assert "Relative performance table" in titles
+    assert not any(str(title).startswith("Relative performance table (") for title in titles)
+
+
+def test_adaptive_split_cards_only_include_scorecard_intro_once():
+    absolute_rows, _ = _sample_rows()
+    relative_rows = _ranked_rows(80)
+
+    payloads = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+    )
+
+    bodies = [payload["attachments"][0]["content"]["body"] for payload in payloads]
+
+    assert len(payloads) == 2
+    assert bodies[0][0]["text"] == "Australian Equity Fund Scorecard | 2026-03-29"
+    assert bodies[1][0]["text"] == "Relative performance table"
+    assert sum(
+        1
+        for body in bodies
+        for block in body
+        if block.get("type") == "TextBlock" and block.get("text") == "Australian Equity Fund Scorecard | 2026-03-29"
+    ) == 1
 
 
 def test_adaptive_split_cards_only_include_scorecard_intro_once():
@@ -400,7 +432,7 @@ def test_build_teams_message_card_labels_rows_with_non_stale_date_offsets():
         webhook_url="https://example.com/webhook",
     )
 
-    table = payload["attachments"][0]["content"]["body"][-1]
+    table = payload[1]["attachments"][0]["content"]["body"][-1]
 
     assert _adaptive_table_rows(table)[1]["columns"][0]["items"][0]["text"] == "Fund A (as of 2026-03-28)"
 
@@ -459,7 +491,7 @@ def test_build_teams_message_card_adaptive_uses_dynamic_top_and_bottom_highlight
         webhook_url="https://example.com/webhook",
     )
 
-    table = payload["attachments"][0]["content"]["body"][-1]
+    table = payload[1]["attachments"][0]["content"]["body"][-1]
     first_mtd_cell = _adaptive_table_rows(table)[1]["columns"][2]
     third_mtd_cell = _adaptive_table_rows(table)[3]["columns"][2]
     third_last_mtd_cell = _adaptive_table_rows(table)[-3]["columns"][2]
@@ -467,12 +499,14 @@ def test_build_teams_message_card_adaptive_uses_dynamic_top_and_bottom_highlight
     first_mtd = first_mtd_cell["items"][0]
     last_mtd = last_mtd_cell["items"][0]
 
-    assert first_mtd_cell["style"] == "attention"
+    assert "style" not in first_mtd_cell
     assert first_mtd["color"] == "Attention"
     assert first_mtd["weight"] == "Bolder"
     assert "style" not in third_mtd_cell
+    assert third_mtd_cell["items"][0].get("color") is None
     assert "style" not in third_last_mtd_cell
-    assert last_mtd_cell["style"] == "good"
+    assert third_last_mtd_cell["items"][0].get("color") is None
+    assert "style" not in last_mtd_cell
     assert last_mtd["color"] == "Good"
     assert last_mtd["weight"] == "Bolder"
 
@@ -488,9 +522,9 @@ def test_build_teams_message_card_adaptive_appends_competitor_set_tables():
         competitor_sets=_competitor_sets(),
     )
 
-    assert len(payload) == 2
-    body = payload[1]["attachments"][0]["content"]["body"]
-    assert body[-3]["text"] == "Market neutral funds"
+    assert len(payload) == 3
+    body = payload[2]["attachments"][0]["content"]["body"]
+    assert body[-3]["text"] == "Absolute return funds"
     assert body[-1]["type"] == "Container"
     assert "Bennelong Market Neutral Fund" in _adaptive_table_rows(body[-1])[2]["columns"][0]["items"][0]["text"]
 
@@ -506,7 +540,7 @@ def test_build_teams_message_card_adaptive_competitor_tables_use_dynamic_top_and
         competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows()}],
     )
 
-    table = payload[1]["attachments"][0]["content"]["body"][-1]
+    table = payload[2]["attachments"][0]["content"]["body"][-1]
     first_mtd_cell = _adaptive_table_rows(table)[1]["columns"][2]
     second_mtd_cell = _adaptive_table_rows(table)[2]["columns"][2]
     third_mtd_cell = _adaptive_table_rows(table)[3]["columns"][2]
@@ -518,18 +552,20 @@ def test_build_teams_message_card_adaptive_competitor_tables_use_dynamic_top_and
     second_last_mtd = second_last_mtd_cell["items"][0]
     last_mtd = last_mtd_cell["items"][0]
 
-    assert first_mtd_cell["style"] == "attention"
+    assert "style" not in first_mtd_cell
     assert first_mtd["color"] == "Attention"
     assert first_mtd["weight"] == "Bolder"
-    assert second_mtd_cell["style"] == "attention"
+    assert "style" not in second_mtd_cell
     assert second_mtd["color"] == "Attention"
     assert second_mtd["weight"] == "Bolder"
     assert "style" not in third_mtd_cell
+    assert third_mtd_cell["items"][0].get("color") is None
     assert "style" not in third_last_mtd_cell
-    assert second_last_mtd_cell["style"] == "good"
+    assert third_last_mtd_cell["items"][0].get("color") is None
+    assert "style" not in second_last_mtd_cell
     assert second_last_mtd["color"] == "Good"
     assert second_last_mtd["weight"] == "Bolder"
-    assert last_mtd_cell["style"] == "good"
+    assert "style" not in last_mtd_cell
     assert last_mtd["color"] == "Good"
     assert last_mtd["weight"] == "Bolder"
 
@@ -545,7 +581,7 @@ def test_build_teams_message_card_adaptive_competitor_highlights_ignore_benchmar
         competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows_with_high_benchmark()}],
     )
 
-    table = payload[1]["attachments"][0]["content"]["body"][-1]
+    table = payload[2]["attachments"][0]["content"]["body"][-1]
     benchmark_mtd = _adaptive_table_rows(table)[1]["columns"][2]["items"][0]
     lowest_fund_mtd_cell = _adaptive_table_rows(table)[2]["columns"][2]
     highest_fund_mtd_cell = _adaptive_table_rows(table)[-1]["columns"][2]
@@ -553,10 +589,10 @@ def test_build_teams_message_card_adaptive_competitor_highlights_ignore_benchmar
     highest_fund_mtd = highest_fund_mtd_cell["items"][0]
 
     assert benchmark_mtd.get("weight") is None
-    assert lowest_fund_mtd_cell["style"] == "attention"
+    assert "style" not in lowest_fund_mtd_cell
     assert lowest_fund_mtd["color"] == "Attention"
     assert lowest_fund_mtd["weight"] == "Bolder"
-    assert highest_fund_mtd_cell["style"] == "good"
+    assert "style" not in highest_fund_mtd_cell
     assert highest_fund_mtd["color"] == "Good"
     assert highest_fund_mtd["weight"] == "Bolder"
 
@@ -571,7 +607,7 @@ def test_build_teams_message_card_adaptive_bolds_all_firetrail_funds():
         webhook_url="https://example.com/webhook",
     )
 
-    table = payload["attachments"][0]["content"]["body"][-1]
+    table = payload[1]["attachments"][0]["content"]["body"][-1]
 
     assert _adaptive_table_rows(table)[1]["columns"][0]["items"][0]["weight"] == "Bolder"
     assert _adaptive_table_rows(table)[2]["columns"][0]["items"][0]["weight"] == "Bolder"
@@ -698,5 +734,5 @@ def test_build_teams_message_card_legacy_appends_competitor_set_sections():
         competitor_sets=_competitor_sets(),
     )
 
-    assert payload[1]["sections"][-1]["title"] == "Market neutral funds"
+    assert payload[1]["sections"][-1]["title"] == "Absolute return funds"
     assert "Bennelong Market Neutral Fund" in payload[1]["sections"][-1]["text"]
