@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 from openpyxl import load_workbook
+from rich.console import Console
 
 from output import _build_html_table, build_html_report, build_plaintext_report, build_rich_table, export_to_excel
 
@@ -159,6 +160,46 @@ def test_build_rich_table_includes_style_column():
 
     assert [column.header for column in table.columns] == ["Fund", "Style", "MTD", "3M", "6M", "12M", "3Y (p.a.)", "5Y (p.a.)"]
 
+
+def test_build_rich_table_wraps_stale_as_of_date_without_ellipsis():
+    rows = [
+        {
+            "Fund": "Sage Capital Absolute Return Fund",
+            "Style": "Agnostic",
+            "is_benchmark": False,
+            "is_stale": True,
+            "error": False,
+            "stale_days": 9,
+            "latest_date": pd.Timestamp("2026-05-18"),
+            "MTD": 0.059,
+            "3M": 0.116,
+            "6M": 0.017,
+            "12M": -0.065,
+            "3Y": -0.08,
+            "5Y": -0.029,
+        }
+    ]
+    console = Console(record=True, width=90, force_terminal=False, color_system=None)
+
+    console.print(build_rich_table(rows, "Example"))
+    rendered = console.export_text()
+
+    assert "as of" in rendered
+    assert "2026-05-18" in rendered
+    assert "stale" in rendered
+    assert "…" not in rendered
+
+
+def test_plaintext_report_labels_non_stale_date_offsets_without_stale_count():
+    absolute_rows, relative_rows = _sample_rows()
+    absolute_rows[1]["latest_date"] = pd.Timestamp("2026-03-28")
+    absolute_rows[1]["stale_days"] = 1
+    absolute_rows[1]["is_stale"] = False
+
+    report = build_plaintext_report(absolute_rows, relative_rows, pd.Timestamp("2026-03-29"))
+
+    assert "Fund A (as of 2026-03-28)" in report
+    assert "Funds with stale public data: 0" in report
 
 def test_build_html_report_includes_style_column_and_values():
     absolute_rows, relative_rows = _sample_rows()

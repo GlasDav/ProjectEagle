@@ -36,6 +36,15 @@ def test_calculate_returns_for_month_and_year_periods():
     assert returns["5Y"] == pytest.approx((133.1 / 80.0) ** (365.25 / (pd.Timestamp("2024-04-30") - pd.Timestamp("2019-03-31")).days) - 1)
 
 
+def test_calculate_returns_mtd_uses_previous_month_end_when_month_start_exists():
+    index = pd.to_datetime(["2024-03-31", "2024-04-01", "2024-04-30"])
+    tri = pd.Series([100.0, 110.0, 121.0], index=index)
+
+    returns = calculate_returns(tri, pd.Timestamp("2024-04-30"))
+
+    assert returns["MTD"] == pytest.approx(0.21)
+
+
 def test_calculate_returns_returns_none_when_history_is_insufficient():
     tri = pd.Series([100.0], index=pd.to_datetime(["2024-01-01"]))
     returns = calculate_returns(tri, pd.Timestamp("2024-01-01"))

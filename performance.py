@@ -26,8 +26,12 @@ def calculate_returns(total_return_index: pd.Series, as_of_date: date | pd.Times
 
     end_value = float(series.loc[end_date])
     month_start = end_date.replace(day=1)
+    month_start_candidate = nearest_on_or_before(series, month_start - pd.Timedelta(days=1))
+    if month_start_candidate is None:
+        month_start_candidate = month_start
+
     targets = {
-        "MTD": month_start,
+        "MTD": month_start_candidate,
         "3M": end_date - pd.DateOffset(months=3),
         "6M": end_date - pd.DateOffset(months=6),
         "12M": end_date - pd.DateOffset(months=12),
