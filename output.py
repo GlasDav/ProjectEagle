@@ -45,8 +45,9 @@ def _plain_row_label(row: dict) -> str:
     label = str(row["Fund"])
     if row.get("is_disabled"):
         return f"{label} ({row.get('disabled_reason') or 'Source pending'})"
-    if _row_is_stale(row):
-        label = f"{label} (as of {_format_public_date(row.get('latest_date'))}, stale {row['stale_days']}d)"
+    date_note = _row_date_note(row)
+    if date_note:
+        label = f"{label} ({date_note})"
     return label
 
 
@@ -57,6 +58,19 @@ def _safe_period_value(row: dict, period: str) -> float:
 
 def _row_is_stale(row: dict) -> bool:
     return bool(row.get("is_stale", row.get("stale_days", 0) > 0))
+
+
+def _row_has_date_offset(row: dict) -> bool:
+    return row.get("latest_date") is not None and int(row.get("stale_days") or 0) > 0
+
+
+def _row_date_note(row: dict) -> str:
+    if not _row_has_date_offset(row):
+        return ""
+    latest = _format_public_date(row.get("latest_date"))
+    if _row_is_stale(row):
+        return f"as of {latest}, stale {row['stale_days']}d"
+    return f"as of {latest}"
 
 
 def _is_firetrail(row: dict) -> bool:
@@ -172,9 +186,9 @@ def render_tables(
     console = console or Console()
     competitor_sets = competitor_sets or []
     competitor_rows = [row for competitor_set in competitor_sets for row in _competitor_set_rows(competitor_set)]
-    if any(_row_is_stale(row) for row in absolute_rows + relative_rows + competitor_rows):
+    if any(_row_has_date_offset(row) for row in absolute_rows + relative_rows + competitor_rows):
         console.print(
-            "[yellow]Note: rows marked stale use the latest public fund date shown in the row label, not the report date in the title.[/yellow]"
+            "[yellow]Note: rows marked with an as-of date use that latest public fund date, not the report date in the title.[/yellow]"
         )
         console.print()
     console.print(build_rich_table(absolute_rows, f"Absolute Total Return Performance ({as_of_date:%Y-%m-%d})"))
@@ -207,7 +221,7 @@ def build_rich_table(
         bottom_n=bottom_n,
         include_benchmark=include_benchmark,
     )
-    table.add_column("Fund", style="bold")
+    table.add_column("Fund", style="bold", overflow="fold", min_width=24)
     table.add_column("Style")
     for period in PERIODS:
         label = f"{period} (p.a.)" if period in {"3Y", "5Y"} else period
@@ -223,10 +237,9 @@ def build_rich_table(
             label = f"[bold]{label}[/bold]"
         if row.get("is_disabled"):
             label = f"{label} [yellow]({row.get('disabled_reason') or 'Source pending'})[/yellow]"
-        if _row_is_stale(row):
-            latest_date = row.get("latest_date")
-            latest_label = latest_date.strftime("%Y-%m-%d") if latest_date is not None else "latest public date"
-            label = f"{label} [yellow](as of {latest_label}, stale {row['stale_days']}d)[/yellow]"
+        date_note = _row_date_note(row)
+        if date_note:
+            label = f"{label} [yellow]({date_note})[/yellow]"
 
         values = [
             _format_value(row.get(period), error=row.get("error", False), highlight=highlights.get((row_index, period)))

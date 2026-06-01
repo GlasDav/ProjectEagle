@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 
-from teams_delivery import build_teams_message_card
+from teams_delivery import MAX_TEAMS_CARD_BYTES, build_teams_message_card, send_teams_message_card, teams_webhook_payload_mode
 
 
 def _sample_rows():
@@ -161,12 +163,262 @@ def test_build_teams_message_card_adaptive_includes_style_column():
 
     table = payload["attachments"][0]["content"]["body"][-1]
     headers = [cell["items"][0]["text"] for cell in table["rows"][0]["cells"]]
-    benchmark_row = table["rows"][1]["cells"]
-    fund_row = table["rows"][2]["cells"]
+    fund_row = table["rows"][1]["cells"]
 
     assert headers[1] == "Style"
-    assert benchmark_row[1]["items"][0]["text"] == ""
     assert fund_row[1]["items"][0]["text"] == "Growth"
+
+
+def test_build_teams_message_card_adaptive_headline_uses_benchmark_latest_nav_date():
+    absolute_rows, relative_rows = _sample_rows()
+    absolute_rows[0]["latest_date"] = pd.Timestamp("2026-03-28")
+
+    payload = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+    )
+
+    content = payload["attachments"][0]["content"]
+    body = content["body"]
+
+    assert payload["summary"] == "Australian Equity Fund Scorecard | 2026-03-28"
+    assert body[0]["text"] == "Australian Equity Fund Scorecard | 2026-03-28"
+    assert body[-2]["text"].startswith("As at 2026-03-28.")
+
+
+def test_build_teams_message_card_legacy_headline_uses_benchmark_latest_nav_date():
+    absolute_rows, relative_rows = _sample_rows()
+    absolute_rows[0]["latest_date"] = pd.Timestamp("2026-03-28")
+
+    payload = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://webhook.office.com/example",
+    )
+
+    assert payload["summary"] == "Australian Equity Fund Scorecard | 2026-03-28"
+    assert payload["title"] == "Australian Equity Fund Scorecard | 2026-03-28"
+    assert payload["sections"][-1]["title"] == "Relative performance table (as at 2026-03-28)"
+
+
+def _walk_adaptive_nodes(value):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_adaptive_nodes(child)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_adaptive_nodes(item)
+
+
+def test_adaptive_card_column_widths_are_strings():
+    absolute_rows, relative_rows = _sample_rows()
+    payloads = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+        competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows(4)}],
+    )
+
+    widths = []
+    for payload in payloads:
+        content = payload["attachments"][0]["content"]
+        for node in _walk_adaptive_nodes(content):
+            if "width" in node:
+                widths.append(node["width"])
+
+    assert widths
+    assert all(isinstance(width, str) for width in widths)
+    assert all(width in {"auto", "stretch", "Full"} or width.replace(".", "", 1).isdigit() or width.endswith("px") for width in widths)
+
+
+def test_adaptive_card_tables_do_not_emit_blank_column_definition_rows():
+    absolute_rows, relative_rows = _sample_rows()
+    payloads = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+        competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows(4)}],
+    )
+
+    tables = [
+        node
+        for payload in payloads
+        for node in _walk_adaptive_nodes(payload["attachments"][0]["content"])
+        if node.get("type") == "Table"
+    ]
+
+    assert tables
+    assert all("columns" not in table for table in tables)
+    for table in tables:
+        first_row = table["rows"][0]
+        first_row_text = [cell["items"][0]["text"] for cell in first_row["cells"]]
+        assert first_row_text == [
+            "Fund",
+            "Style",
+            "MTD",
+            "3M",
+            "6M",
+            "12M",
+            "3Y (p.a.)",
+            "5Y (p.a.)",
+        ]
+
+
+def test_teams_payloads_include_relative_and_peer_tables_without_absolute_table():
+    absolute_rows, relative_rows = _sample_rows()
+    absolute_rows[0]["latest_date"] = pd.Timestamp("2026-03-28")
+    competitor_sets = [
+        {"id": "long_short", "title": "Long-short funds", "rows": _ranked_rows(2)},
+        *_competitor_sets(),
+    ]
+
+    adaptive_payload = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+        competitor_sets=competitor_sets,
+    )
+    adaptive_bodies = [payload["attachments"][0]["content"]["body"] for payload in adaptive_payload]
+    adaptive_titles = [
+        block.get("text")
+        for body in adaptive_bodies
+        for block in body
+        if block.get("type") == "TextBlock"
+    ]
+    adaptive_tables = [
+        block
+        for body in adaptive_bodies
+        for block in body
+        if block.get("type") == "Table"
+    ]
+
+    assert adaptive_payload["summary"] == "Australian Equity Fund Scorecard | 2026-03-28"
+    assert "Relative performance table" in adaptive_titles
+    assert "Long-short funds" in adaptive_titles
+    assert "Market neutral funds" in adaptive_titles
+    assert "Full performance table" not in adaptive_titles
+    assert not any("Absolute" in str(title) for title in adaptive_titles if title)
+    assert len(adaptive_tables) == 3
+    assert len(adaptive_payload) == 3
+    assert adaptive_tables[0]["rows"][1]["cells"][0]["items"][0]["text"] == "Fund A"
+    assert all(
+        row["cells"][0]["items"][0]["text"] != "Benchmark"
+        for row in adaptive_tables[0]["rows"][1:]
+    )
+
+    legacy_payload = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://webhook.office.com/example",
+        competitor_sets=competitor_sets,
+    )
+    legacy_sections = [section for payload in legacy_payload for section in payload["sections"]]
+    legacy_titles = [section.get("title") for section in legacy_sections if section.get("title")]
+    relative_section = next(section for section in legacy_sections if str(section.get("title", "")).startswith("Relative performance table"))
+
+    assert legacy_payload["title"] == "Australian Equity Fund Scorecard | 2026-03-28"
+    assert len(legacy_payload) == 3
+    assert "Long-short funds" in legacy_titles
+    assert "Market neutral funds" in legacy_titles
+    assert not any(str(title).startswith("Full performance table") for title in legacy_titles)
+    assert not any("Absolute" in str(title) for title in legacy_titles)
+    assert "Fund A" in relative_section["text"]
+    assert "Benchmark row shows absolute benchmark total returns" not in relative_section["text"]
+
+
+def test_adaptive_cards_split_large_tables_under_size_limit():
+    absolute_rows, _ = _sample_rows()
+    relative_rows = _ranked_rows(80)
+
+    payloads = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+    )
+
+    assert len(payloads) > 1
+    assert all(
+        len(json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8")) <= MAX_TEAMS_CARD_BYTES
+        for payload in payloads
+    )
+    titles = [
+        block.get("text")
+        for payload in payloads
+        for block in payload["attachments"][0]["content"]["body"]
+        if block.get("type") == "TextBlock"
+    ]
+    assert any(str(title).startswith("Relative performance table (") for title in titles)
+
+
+def test_build_teams_message_card_labels_rows_with_non_stale_date_offsets():
+    absolute_rows, relative_rows = _sample_rows()
+    relative_rows[0]["latest_date"] = pd.Timestamp("2026-03-28")
+    relative_rows[0]["stale_days"] = 1
+    relative_rows[0]["is_stale"] = False
+
+    payload = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+    )
+
+    table = payload["attachments"][0]["content"]["body"][-1]
+
+    assert table["rows"][1]["cells"][0]["items"][0]["text"] == "Fund A (as of 2026-03-28)"
+
+
+def test_send_teams_message_card_posts_each_card_and_reports_failing_card():
+    class FakeResponse:
+        def __init__(self, status_code: int):
+            self.status_code = status_code
+            self.text = ""
+
+    class FakeSession:
+        def __init__(self):
+            self.posts = []
+
+        def post(self, webhook_url, json, timeout):
+            self.posts.append(json)
+            return FakeResponse(200 if len(self.posts) == 1 else 403)
+
+    absolute_rows, relative_rows = _sample_rows()
+    session = FakeSession()
+
+    try:
+        send_teams_message_card(
+            "https://webhook.office.com/example",
+            absolute_rows,
+            relative_rows,
+            pd.Timestamp("2026-03-29"),
+            competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows()}],
+            session=session,
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected Teams delivery to fail")
+
+    assert len(session.posts) == 2
+    assert "HTTP 403" in message
+    assert "card 2/2" in message
+    assert "Competitors" in message
+    assert "Payload mode was legacy MessageCard" in message
+    assert "workflow/connector is enabled" in message
+
+
+def test_teams_webhook_payload_mode_identifies_legacy_and_adaptive_urls():
+    assert teams_webhook_payload_mode("https://tenant.webhook.office.com/example") == "legacy MessageCard"
+    assert teams_webhook_payload_mode("https://prod-00.logic.azure.com/workflows/example/triggers/manual/paths/invoke") == "Adaptive Card"
 
 
 def test_build_teams_message_card_adaptive_uses_dynamic_top_and_bottom_highlight_count():
@@ -208,8 +460,9 @@ def test_build_teams_message_card_adaptive_appends_competitor_set_tables():
         competitor_sets=_competitor_sets(),
     )
 
-    body = payload["attachments"][0]["content"]["body"]
-    assert body[-2]["text"] == "Market neutral funds"
+    assert len(payload) == 2
+    body = payload[1]["attachments"][0]["content"]["body"]
+    assert body[-3]["text"] == "Market neutral funds"
     assert body[-1]["type"] == "Table"
     assert "Bennelong Market Neutral Fund" in body[-1]["rows"][2]["cells"][0]["items"][0]["text"]
 
@@ -225,7 +478,7 @@ def test_build_teams_message_card_adaptive_competitor_tables_use_dynamic_top_and
         competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows()}],
     )
 
-    table = payload["attachments"][0]["content"]["body"][-1]
+    table = payload[1]["attachments"][0]["content"]["body"][-1]
     first_mtd_cell = table["rows"][1]["cells"][2]
     second_mtd_cell = table["rows"][2]["cells"][2]
     third_mtd_cell = table["rows"][3]["cells"][2]
@@ -264,7 +517,7 @@ def test_build_teams_message_card_adaptive_competitor_highlights_ignore_benchmar
         competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows_with_high_benchmark()}],
     )
 
-    table = payload["attachments"][0]["content"]["body"][-1]
+    table = payload[1]["attachments"][0]["content"]["body"][-1]
     benchmark_mtd = table["rows"][1]["cells"][2]["items"][0]
     lowest_fund_mtd_cell = table["rows"][2]["cells"][2]
     highest_fund_mtd_cell = table["rows"][-1]["cells"][2]
@@ -374,7 +627,7 @@ def test_build_teams_message_card_legacy_competitor_tables_mark_dynamic_best_and
         competitor_sets=[{"id": "competitors", "title": "Competitors", "rows": _ranked_rows()}],
     )
 
-    table_text = payload["sections"][-1]["text"]
+    table_text = payload[1]["sections"][-1]["text"]
     green_marker = "\N{LARGE GREEN CIRCLE}"
     red_marker = "\N{LARGE RED CIRCLE}"
 
@@ -417,5 +670,5 @@ def test_build_teams_message_card_legacy_appends_competitor_set_sections():
         competitor_sets=_competitor_sets(),
     )
 
-    assert payload["sections"][-1]["title"] == "Market neutral funds"
-    assert "Bennelong Market Neutral Fund" in payload["sections"][-1]["text"]
+    assert payload[1]["sections"][-1]["title"] == "Market neutral funds"
+    assert "Bennelong Market Neutral Fund" in payload[1]["sections"][-1]["text"]

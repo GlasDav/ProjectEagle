@@ -15,7 +15,7 @@ from connectors import CSVConnector, ConnectorValidationError, ScraperConnector,
 from delivery import load_email_settings, parse_recipients, send_report_email
 from output import build_html_report, build_plaintext_report, export_to_excel, export_to_html, render_tables
 from performance import PERIODS, calculate_relative_returns, calculate_returns, nearest_on_or_before
-from teams_delivery import load_teams_webhook_url, send_teams_message_card
+from teams_delivery import load_teams_webhook_url, send_teams_message_card, teams_webhook_payload_mode
 from total_return import build_total_return_index
 
 LOGGER = logging.getLogger(__name__)
@@ -200,14 +200,7 @@ def resolve_as_of_date(benchmark_tri: pd.Series, requested_as_of: pd.Timestamp) 
     return resolved
 
 
-def compute_result(
-    config: dict[str, Any],
-    as_of_date: pd.Timestamp,
-    start_date: str,
-    use_cache: bool,
-    cache_date: pd.Timestamp,
-) -> FundResult:
-    frame = fetch_data(config, start_date, as_of_date.strftime("%Y-%m-%d"), use_cache=use_cache, cache_date=cache_date)
+def compute_result_from_frame(config: dict[str, Any], frame: pd.DataFrame, as_of_date: pd.Timestamp) -> FundResult:
     if frame is None or frame.empty:
         raise RuntimeError("No data returned.")
 
@@ -234,6 +227,52 @@ def compute_result(
         stale_days=stale_days,
         latest_date=latest_date,
     )
+
+
+def compute_result(
+    config: dict[str, Any],
+    as_of_date: pd.Timestamp,
+    start_date: str,
+    use_cache: bool,
+    cache_date: pd.Timestamp,
+) -> FundResult:
+    frame = fetch_data(config, start_date, as_of_date.strftime("%Y-%m-%d"), use_cache=use_cache, cache_date=cache_date)
+    return compute_result_from_frame(config, frame, as_of_date)
+
+
+def latest_available_date(config: dict[str, Any], frame: pd.DataFrame | None, requested_as_of: pd.Timestamp) -> pd.Timestamp | None:
+    if frame is None or frame.empty:
+        return None
+    tri = build_total_return_index(frame, config["nav_type"])
+    if tri.empty:
+        return None
+    return nearest_on_or_before(tri, requested_as_of)
+
+
+def select_report_as_of_date(
+    fund_configs: list[dict[str, Any]],
+    fund_frames: dict[str, pd.DataFrame],
+    fallback_as_of: pd.Timestamp,
+) -> pd.Timestamp:
+    dates: list[pd.Timestamp] = []
+    for fund_config in fund_configs:
+        if not is_enabled(fund_config):
+            continue
+        frame = fund_frames.get(str(fund_config["name"]))
+        try:
+            latest_date = latest_available_date(fund_config, frame, fallback_as_of)
+        except Exception as exc:
+            LOGGER.warning("Failed to inspect latest date for %s: %s", fund_config["name"], exc)
+            continue
+        if latest_date is not None:
+            dates.append(pd.Timestamp(latest_date).normalize())
+
+    if not dates:
+        return fallback_as_of
+
+    counts = pd.Series(dates).value_counts()
+    highest_count = counts.max()
+    return pd.Timestamp(max(counts[counts == highest_count].index)).normalize()
 
 
 def to_row(result: FundResult) -> dict[str, Any]:
@@ -280,20 +319,31 @@ def build_fund_report_rows(
     start_date: str,
     use_cache: bool,
     cache_date: pd.Timestamp,
+    benchmark_tri: pd.Series | None = None,
+    fund_frame: pd.DataFrame | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     if not is_enabled(fund_config):
         return unavailable_absolute_row(fund_config), unavailable_relative_row(fund_config)
 
     try:
-        result = compute_result(
-            fund_config,
-            as_of_date=as_of_date,
-            start_date=start_date,
-            use_cache=use_cache,
-            cache_date=cache_date,
+        result = (
+            compute_result_from_frame(fund_config, fund_frame, as_of_date)
+            if fund_frame is not None
+            else compute_result(
+                fund_config,
+                as_of_date=as_of_date,
+                start_date=start_date,
+                use_cache=use_cache,
+                cache_date=cache_date,
+            )
         )
         absolute_row = to_row(result)
-        relative = calculate_relative_returns(result.returns, benchmark_returns)
+        aligned_benchmark_returns = (
+            calculate_returns(benchmark_tri, result.latest_date)
+            if benchmark_tri is not None and result.latest_date is not None
+            else benchmark_returns
+        )
+        relative = calculate_relative_returns(result.returns, aligned_benchmark_returns)
         relative_row = {
             "Fund": result.name,
             "Style": result.style,
@@ -381,6 +431,7 @@ def build_competitor_set_results(
     start_date: str,
     use_cache: bool,
     cache_date: pd.Timestamp,
+    benchmark_tri: pd.Series | None = None,
     row_cache: dict[str, tuple[dict[str, Any], dict[str, Any]]] | None = None,
 ) -> list[CompetitorSetResult]:
     funds_by_name = _fund_lookup(config.get("funds") or [])
@@ -399,6 +450,7 @@ def build_competitor_set_results(
                     benchmark_returns=benchmark_returns,
                     as_of_date=as_of_date,
                     start_date=start_date,
+                    benchmark_tri=benchmark_tri,
                     use_cache=use_cache,
                     cache_date=cache_date,
                 )
@@ -459,16 +511,39 @@ def main() -> int:
         raise SystemExit("Benchmark fetch failed. Cannot calculate relative performance without benchmark data.")
 
     benchmark_tri = build_total_return_index(benchmark_frame, benchmark_config["nav_type"])
-    as_of_date = resolve_as_of_date(benchmark_tri, requested_as_of)
+    benchmark_as_of = resolve_as_of_date(benchmark_tri, requested_as_of)
+
+    fund_frames: dict[str, pd.DataFrame] = {}
+    for fund_config in fund_configs:
+        try:
+            fund_frames[str(fund_config["name"])] = fetch_data(
+                fund_config,
+                start_date,
+                benchmark_as_of.strftime("%Y-%m-%d"),
+                use_cache=not args.no_cache,
+                cache_date=benchmark_as_of,
+            )
+        except Exception as exc:
+            LOGGER.warning("Failed to fetch %s while selecting report date: %s", fund_config["name"], exc)
+            fund_frames[str(fund_config["name"])] = pd.DataFrame(columns=["nav", "distribution"])
+
+    as_of_date = select_report_as_of_date(fund_configs, fund_frames, benchmark_as_of)
+    if as_of_date != benchmark_as_of:
+        LOGGER.info("Using %s as report date because it is the latest date available for the most funds.", as_of_date.date())
+
     benchmark_returns = calculate_returns(benchmark_tri, as_of_date)
+    benchmark_latest_date = nearest_on_or_before(benchmark_tri, as_of_date)
+    if benchmark_latest_date is None:
+        raise SystemExit("Benchmark fetch failed. Cannot calculate performance for the selected report date.")
+    benchmark_stale_days = max((as_of_date - benchmark_latest_date).days, 0)
     benchmark_result = FundResult(
         name=benchmark_config["name"],
         returns=benchmark_returns,
         style="",
         is_benchmark=True,
-        is_stale=max((as_of_date - benchmark_tri.index[-1]).days, 0) > int(benchmark_config.get("stale_after_days", 5)),
-        stale_days=max((as_of_date - benchmark_tri.index[-1]).days, 0),
-        latest_date=benchmark_tri.index[-1],
+        is_stale=benchmark_stale_days > int(benchmark_config.get("stale_after_days", 5)),
+        stale_days=benchmark_stale_days,
+        latest_date=benchmark_latest_date,
     )
 
     absolute_rows = [to_row(benchmark_result)]
@@ -479,10 +554,12 @@ def main() -> int:
         absolute_row, relative_row = build_fund_report_rows(
             fund_config,
             benchmark_returns=benchmark_returns,
+            benchmark_tri=benchmark_tri,
             as_of_date=as_of_date,
             start_date=start_date,
             use_cache=not args.no_cache,
-            cache_date=as_of_date,
+            cache_date=benchmark_as_of,
+            fund_frame=fund_frames.get(str(fund_config["name"])),
         )
         row_cache[str(fund_config["name"])] = (absolute_row, relative_row)
         absolute_rows.append(absolute_row)
@@ -501,8 +578,9 @@ def main() -> int:
         benchmark_returns=benchmark_returns,
         as_of_date=as_of_date,
         start_date=start_date,
+        benchmark_tri=benchmark_tri,
         use_cache=not args.no_cache,
-        cache_date=as_of_date,
+        cache_date=benchmark_as_of,
         row_cache=row_cache,
     )
     if competitor_sets:
@@ -548,6 +626,7 @@ def main() -> int:
 
     if args.send_teams:
         webhook_url = load_teams_webhook_url(args.teams_webhook_url)
+        LOGGER.info("Posting Teams report using %s payload mode.", teams_webhook_payload_mode(webhook_url))
         send_teams_message_card(
             webhook_url=webhook_url,
             absolute_rows=absolute_rows,
