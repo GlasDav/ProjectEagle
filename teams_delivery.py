@@ -119,25 +119,6 @@ def _highlight_cell_style(highlight: PerformanceHighlight | None) -> str | None:
     return None
 
 
-def _table_rows_with_benchmark_absolute(absolute_rows: list[dict], relative_rows: list[dict]) -> list[dict]:
-    benchmark = next((row for row in absolute_rows if row.get("is_benchmark")), None)
-    rows: list[dict] = []
-    if benchmark is not None:
-        rows.append(
-            {
-                "Fund": benchmark["Fund"],
-                "Style": benchmark.get("Style", ""),
-                "is_benchmark": True,
-                "error": benchmark.get("error", False),
-                "stale_days": benchmark.get("stale_days", 0),
-                "latest_date": benchmark.get("latest_date"),
-                **{period: benchmark.get(period) for period in PERIODS},
-            }
-        )
-    rows.extend(relative_rows)
-    return rows
-
-
 def _average_by_style(rows: list[dict], period: str) -> list[dict[str, object]]:
     grouped: dict[str, list[float]] = {}
     for row in rows:
@@ -375,7 +356,6 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
     best_relative = snapshot["best_relative"]
-    table_rows_source = _table_rows_with_benchmark_absolute(absolute_rows, relative_rows)
     report_date = _measurement_date(absolute_rows, as_of_date)
     report_date_label = _format_report_date(report_date)
 
@@ -407,7 +387,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
         {"title": "Stale sources", "value": str(snapshot["stale_count"])},
     ]
 
-    table = _build_adaptive_table(table_rows_source)
+    relative_table = _build_adaptive_table(relative_rows)
 
     card_content = {
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -437,12 +417,12 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
             },
             _text_block("Top 12M funds", weight="Bolder", size="Medium"),
             _text_block(top_funds),
-            _text_block("Full performance table", weight="Bolder", size="Medium"),
+            _text_block("Relative performance table", weight="Bolder", size="Medium"),
             _text_block(
-                f"As at {report_date_label}. The benchmark row shows absolute benchmark total returns. "
-                "Fund rows show excess returns versus the benchmark, and the Average row is the simple mean of live funds."
+                f"As at {report_date_label}. Fund rows show excess returns versus the benchmark, "
+                "and the Average row is the simple mean of live funds."
             ),
-            table,
+            relative_table,
             *_adaptive_competitor_set_blocks(competitor_sets),
         ],
     }
@@ -465,7 +445,6 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
     benchmark = snapshot["benchmark"]
     best_absolute = snapshot["best_absolute"]
     best_relative = snapshot["best_relative"]
-    table_rows_source = _table_rows_with_benchmark_absolute(absolute_rows, relative_rows)
     report_date = _measurement_date(absolute_rows, as_of_date)
     report_date_label = _format_report_date(report_date)
 
@@ -490,7 +469,7 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
         else "No 12M excess-return leader is available."
     )
 
-    table_text = _build_plaintext_table(table_rows_source)
+    relative_table_text = _build_plaintext_table(relative_rows)
 
     sections = [
         {
@@ -509,12 +488,11 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
         {"title": "Style lens", "text": str(snapshot["style_commentary"]), "markdown": True},
         {"title": "Top 12M funds", "text": top_funds, "markdown": True},
         {
-            "title": f"Full performance table (as at {report_date_label})",
+            "title": f"Relative performance table (as at {report_date_label})",
             "text": (
-                "Benchmark row shows absolute benchmark total returns. "
                 "Fund rows show excess returns versus the benchmark. "
                 "Average row is the simple mean of live funds.\n\n"
-                f"{table_text}"
+                f"{relative_table_text}"
             ),
             "markdown": True,
         },
