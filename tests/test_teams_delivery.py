@@ -273,7 +273,6 @@ def test_adaptive_card_tables_use_teams_safe_columnsets():
             "3Y (p.a.)",
             "5Y (p.a.)",
         ]
-        assert all(row["spacing"] == "None" for row in rows)
         assert all([cell["width"] for cell in row["columns"]] == expected_widths for row in rows)
         assert not any("style" in cell for row in rows for cell in row["columns"])
 
@@ -345,6 +344,23 @@ def test_teams_payloads_include_relative_and_peer_tables_without_absolute_table(
     assert not any(str(title).startswith("Full performance table") for title in legacy_titles)
     assert "Fund A" in relative_section["text"]
     assert "Benchmark row shows absolute benchmark total returns" not in relative_section["text"]
+
+
+def test_adaptive_default_sized_main_table_stays_in_one_message():
+    absolute_rows, _ = _sample_rows()
+    relative_rows = _ranked_rows(23)
+
+    payloads = build_teams_message_card(
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        webhook_url="https://example.com/webhook",
+    )
+
+    assert len(payloads) == 2
+    table = payloads[1]["attachments"][0]["content"]["body"][-1]
+    assert payloads[1]["attachments"][0]["content"]["body"][0]["text"] == "Relative performance table"
+    assert len(_adaptive_table_rows(table)) == 24
 
 
 def test_adaptive_main_table_splits_into_two_messages_when_large():
@@ -470,7 +486,7 @@ def test_send_teams_message_card_posts_payloads_in_order_with_delays():
             return FakeResponse()
 
     absolute_rows, _ = _sample_rows()
-    relative_rows = _ranked_rows(14)
+    relative_rows = _ranked_rows(23)
     session = FakeSession()
     delays = []
 
@@ -492,12 +508,11 @@ def test_send_teams_message_card_posts_payloads_in_order_with_delays():
     assert payloads == session.posts
     assert posted_titles == [
         "Australian Equity Fund Scorecard | 2026-03-29",
-        "Relative performance table (1/2)",
-        "Relative performance table (2/2)",
+        "Relative performance table",
         "Long-short funds",
         "Absolute return funds",
     ]
-    assert delays == [0.25, 0.25, 0.25, 0.25]
+    assert delays == [0.25, 0.25, 0.25]
 
 
 def test_teams_webhook_payload_mode_identifies_legacy_and_adaptive_urls():

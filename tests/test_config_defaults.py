@@ -26,6 +26,8 @@ def test_removed_funds_are_not_in_default_live_config():
         "Investors Mutual Australian Share Fund",
         "Dimensional Australian Value",
         "Dimensional Aust Core Equity",
+        "Forager Australian Value",
+        "Perpetual Pure Value",
     }
     assert removed_names.isdisjoint(live_names)
 

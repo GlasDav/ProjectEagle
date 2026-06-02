@@ -16,7 +16,7 @@ LEGACY_TOP_MARKER = "\N{LARGE GREEN CIRCLE}"
 LEGACY_BOTTOM_MARKER = "\N{LARGE RED CIRCLE}"
 LEGACY_HIGHLIGHT_LEGEND = "Green circles mark best performers; red circles mark worst performers."
 MAX_TEAMS_CARD_BYTES = 24_000
-ADAPTIVE_MAIN_TABLE_SPLIT_ROW_THRESHOLD = 12
+ADAPTIVE_MAIN_TABLE_SPLIT_ROW_THRESHOLD = 23
 DEFAULT_TEAMS_POST_DELAY_SECONDS = 1.0
 
 
@@ -286,11 +286,11 @@ def _competitor_set_rows(competitor_set) -> list[dict]:
 
 
 def _adaptive_table_column(items: list[dict[str, Any]], *, width: str) -> dict[str, Any]:
-    return {"type": "Column", "width": width, "items": items, "verticalContentAlignment": "Center"}
+    return {"type": "Column", "width": width, "items": items}
 
 
 def _adaptive_table_row(cells: list[dict[str, Any]], *, separator: bool = False) -> dict[str, Any]:
-    row: dict[str, Any] = {"type": "ColumnSet", "columns": cells, "spacing": "None"}
+    row: dict[str, Any] = {"type": "ColumnSet", "columns": cells}
     if separator:
         row["separator"] = True
     return row
@@ -329,7 +329,6 @@ def _build_adaptive_table(
                     weight="Bolder",
                     wrap=index == 0,
                     horizontal_alignment="Right" if index >= 2 else None,
-                    spacing="None",
                 )
             ],
             width=column_widths[index],
@@ -346,12 +345,11 @@ def _build_adaptive_table(
         label_block = _text_block(
             _format_fund_label(row),
             weight="Bolder" if row.get("is_benchmark") or row.get("is_average") or _is_firetrail(row) else None,
-            spacing="None",
         )
         cells = [
             _adaptive_table_column([label_block], width=column_widths[0]),
             _adaptive_table_column(
-                [_text_block(str(row.get("Style") or ""), horizontal_alignment="Right", wrap=False, spacing="None")],
+                [_text_block(str(row.get("Style") or ""), horizontal_alignment="Right", wrap=False)],
                 width=column_widths[1],
             ),
         ]
@@ -364,7 +362,6 @@ def _build_adaptive_table(
             )
             value_block["horizontalAlignment"] = "Right"
             value_block["wrap"] = False
-            value_block["spacing"] = "None"
             cells.append(_adaptive_table_column([value_block], width=column_widths[len(cells)]))
         items.append(_adaptive_table_row(cells, separator=True))
 

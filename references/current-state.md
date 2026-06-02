@@ -2,12 +2,12 @@
 
 This file is the quick onboarding reference for the live PerfSraper configuration.
 
-## As Of May 19, 2026
+## As Of June 2, 2026
 
 - Benchmark: S&P/ASX 200 Accumulation via `^AXJT`
-- Live funds: 32
-- Disabled funds/placeholders: 24
-- Live source mix: 31 scraper-backed `ex_distribution` funds, 1 yfinance `adjusted_close` peer-only ETF
+- Live funds: 30
+- Disabled funds/placeholders: 26
+- Live source mix: 29 scraper-backed `ex_distribution` funds, 1 yfinance `adjusted_close` peer-only ETF
 
 ## Active Invariants
 
@@ -37,6 +37,8 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 - The Teams card now shows the full benchmark-relative performance table rather than the absolute table.
 - The benchmark row is pinned to the top of that Teams table, and the default lineup excludes the four comparison funds that duplicated broad index coverage.
+- Forager Australian Value and Perpetual Pure Value are disabled in the default lineup so the main Teams relative table can post as one Adaptive Card within the workflow payload limit.
+- Adaptive Teams table rows now omit redundant spacing/alignment metadata to keep the default main table compact, while very large ad hoc tables can still split.
 
 ### Distribution timing
 
@@ -140,7 +142,6 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Greencape Broadcap
 - Perpetual Industrial
 - ECP Growth Companies
-- Perpetual Pure Value
 - Bennelong Concentrated
 - Pendal Australian Focus Fund
 - Chester High Conviction Fund
@@ -149,7 +150,6 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Wavestone Australian Share Fund
 - DNR High Conviction
 - Perpetual Concentrated Equity Fund
-- Forager Australian Value
 - Katana Australian Equity Fund
 - AuscapAM Auscap Ex-20 Australian Equities Fund
 - Lazard Select Australian Equity
@@ -172,7 +172,7 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Peer-set appendices are configured for long-short and market-neutral competitors. Firetrail Alpha Plus, Ten Cap Alpha Plus, Firetrail Absolute Return, Sage Equity Plus, Perpetual SHARE-PLUS, Acadian Long Short, Vinva Alpha Extension, and Sage Absolute Return have computable public sources. Regal Long Short, Acadian Wholesale Market Neutral, Regal Tasman Market Neutral, and Bennelong Market Neutral remain disabled placeholders until durable public history is validated.
 - Selector High Conviction Equity Fund is disabled because the public source mapping appears wrong.
 - Vanguard Australian Shares Index is disabled because it closely tracks the benchmark index; its Vanguard API distribution parser now uses the `CASH` tax detail only rather than summing taxable components.
-- Smallco Broadcap, Investors Mutual Australian Share Fund, RQI Australian Value (formerly Realindex), First Sentier FSI Geared Australian Share Fund, Dimensional Australian Value, and Dimensional Aust Core Equity are represented in config but removed from the default report list.
+- Smallco Broadcap, Investors Mutual Australian Share Fund, RQI Australian Value (formerly Realindex), First Sentier FSI Geared Australian Share Fund, Dimensional Australian Value, Dimensional Aust Core Equity, Forager Australian Value, and Perpetual Pure Value are represented in config but removed from the default report list.
 - Allan Gray Australian Equity is disabled because the official daily price feed currently stops at `2026-03-09`; the month-end fact sheet is useful for longer-period history but not daily MTD ranking.
 
 ## Verification Baseline

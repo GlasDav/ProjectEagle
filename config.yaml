@@ -379,6 +379,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Perpetual Pure Value"
+    enabled: false
+    disabled_reason: "Removed from the default report to keep the Teams main table within the workflow payload limit."
     source: scraper
     scraper_id: "perpetual_family"
     portfolio_id: "411"
@@ -434,6 +436,8 @@ funds:
     nav_type: ex_distribution
 
   - name: "Forager Australian Value"
+    enabled: false
+    disabled_reason: "Removed from the default report to keep the Teams main table within the workflow payload limit."
     aliases:
       - "Forager Australian Shares Fund"
     apir_code: "FOR0001AU"

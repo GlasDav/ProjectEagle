@@ -35,7 +35,7 @@ Reports can also append configured peer-set tables after the main performance ta
 
 ## Style Mapping
 
-- `value`: Perpetual Industrial, Perpetual Pure Value
+- `value`: Perpetual Industrial
 - `growth`: Fidelity Australian Equities Fund, Ausbil Active Equity, Bennelong Concentrated, ECP Growth Companies, Hyperion Australian Growth Companies Fund
 - `agnostic`: Firetrail High Conviction Fund, Airlie Australian Share Fund, Greencape High Conviction, Greencape Broadcap, Chester High Conviction Fund, Pendal Australian Focus Fund, Solaris Core Australian Equity Fund
 
@@ -71,7 +71,7 @@ py main.py --no-cache --export html --output-dir reports
 
 ## Teams Delivery
 
-Teams delivery posts an Adaptive Card into a channel webhook with the scorecard summary at the top and the full benchmark-relative performance table for all funds at the bottom, while keeping the full HTML report archived locally in `reports/`.
+Teams delivery posts Adaptive Cards into a channel webhook with the scorecard summary first and the default benchmark-relative performance table as a single follow-up card, while keeping the full HTML report archived locally in `reports/`.
 
 Required environment variable:
 
