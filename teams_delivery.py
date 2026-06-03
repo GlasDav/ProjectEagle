@@ -15,7 +15,7 @@ from table_highlighting import HIGHLIGHT_BOTTOM, HIGHLIGHT_TOP, PerformanceHighl
 LEGACY_TOP_MARKER = "\N{LARGE GREEN CIRCLE}"
 LEGACY_BOTTOM_MARKER = "\N{LARGE RED CIRCLE}"
 LEGACY_HIGHLIGHT_LEGEND = "Green circles mark best performers; red circles mark worst performers."
-MAX_TEAMS_CARD_BYTES = 24_000
+MAX_TEAMS_CARD_BYTES = 27_000
 DEFAULT_TEAMS_POST_DELAY_SECONDS = 1.0
 
 

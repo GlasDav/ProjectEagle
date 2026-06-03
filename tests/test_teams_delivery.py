@@ -352,7 +352,7 @@ def test_teams_payloads_include_relative_and_peer_tables_without_absolute_table(
     assert "Benchmark row shows absolute benchmark total returns" not in relative_section["text"]
 
 
-def test_adaptive_default_sized_main_table_splits_without_compacting():
+def test_adaptive_default_sized_main_table_fits_under_safety_cap_without_compacting():
     absolute_rows, _ = _sample_rows()
     relative_rows = _ranked_rows(23)
 
@@ -367,10 +367,10 @@ def test_adaptive_default_sized_main_table_splits_without_compacting():
     table_rows = [_adaptive_table_rows(payload["attachments"][0]["content"]["body"][-1]) for payload in table_payloads]
     payload_json = json.dumps(table_payloads, ensure_ascii=False)
 
-    assert len(payloads) == 3
+    assert len(payloads) == 2
     assert all(_payload_size(payload) <= MAX_TEAMS_CARD_BYTES for payload in table_payloads)
-    assert all(rows[0]["columns"][0]["items"][0]["text"] == "Fund" for rows in table_rows)
-    assert all(rows[0]["columns"][1]["items"][0]["text"] == "Style" for rows in table_rows)
+    assert table_rows[0][0]["columns"][0]["items"][0]["text"] == "Fund"
+    assert table_rows[0][0]["columns"][1]["items"][0]["text"] == "Style"
     assert sum(len(rows) - 1 for rows in table_rows) == 23
     assert table_rows[0][1]["columns"][0]["items"][0]["text"] == "Fund 1"
     assert table_rows[0][1]["columns"][1]["items"][0]["text"] == "Growth"
@@ -380,7 +380,7 @@ def test_adaptive_default_sized_main_table_splits_without_compacting():
     assert "\N{LARGE RED CIRCLE}" not in payload_json
 
 
-def test_adaptive_main_table_splits_regular_tables_before_compacting():
+def test_adaptive_main_table_splits_regular_tables_when_compact_table_is_too_large():
     absolute_rows, _ = _sample_rows()
     relative_rows = _ranked_rows(80)
 
@@ -547,12 +547,11 @@ def test_send_teams_message_card_posts_payloads_in_order_with_delays():
     assert payloads == session.posts
     assert posted_titles == [
         "Australian Equity Fund Scorecard | 2026-03-29",
-        "Relative performance table (1/2)",
-        "Relative performance table (2/2)",
+        "Relative performance table",
         "Long-short funds",
         "Absolute return funds",
     ]
-    assert delays == [0.25, 0.25, 0.25, 0.25]
+    assert delays == [0.25, 0.25, 0.25]
 
 
 def test_teams_webhook_payload_mode_identifies_legacy_and_adaptive_urls():
