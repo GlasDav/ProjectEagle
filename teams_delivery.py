@@ -327,7 +327,7 @@ def _build_adaptive_table(
     """
 
     headers = ["Fund", "Style", *[f"{period} (p.a.)" if period in {"3Y", "5Y"} else period for period in PERIODS]]
-    column_widths = ["360px", "78px", "58px", "58px", "58px", "64px", "76px", "76px"]
+    column_widths = ["300px", "66px", "50px", "50px", "50px", "56px", "64px", "64px"]
     if highlights is None:
         highlights = build_period_highlights(
             rows_source,

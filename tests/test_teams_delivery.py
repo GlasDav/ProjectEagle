@@ -267,7 +267,7 @@ def test_adaptive_card_tables_use_teams_safe_columnsets():
         rows = _adaptive_table_rows(table)
         first_row = rows[0]
         first_row_text = [cell["items"][0]["text"] for cell in first_row["columns"]]
-        expected_widths = ["360px", "78px", "58px", "58px", "58px", "64px", "76px", "76px"]
+        expected_widths = ["300px", "66px", "50px", "50px", "50px", "56px", "64px", "64px"]
 
         assert first_row_text == [
             "Fund",
