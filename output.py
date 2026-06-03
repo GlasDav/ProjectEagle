@@ -176,6 +176,19 @@ def _competitor_set_rows(competitor_set) -> list[dict]:
     return list(getattr(competitor_set, "rows", []) or [])
 
 
+def _competitor_set_performance_mode(competitor_set) -> str:
+    if isinstance(competitor_set, dict):
+        return str(competitor_set.get("performance_mode") or "relative").strip().casefold()
+    return str(getattr(competitor_set, "performance_mode", "relative") or "relative").strip().casefold()
+
+
+def _competitor_set_description(competitor_set) -> str:
+    mode = _competitor_set_performance_mode(competitor_set)
+    if mode == "absolute":
+        return "Absolute total-return performance."
+    return "Benchmark-relative excess returns versus the S&P/ASX 200 Accumulation index."
+
+
 def render_tables(
     absolute_rows: list[dict],
     relative_rows: list[dict],
@@ -313,7 +326,14 @@ def build_plaintext_report(absolute_rows: list[dict], relative_rows: list[dict],
 
     lines.extend(["", "The HTML version of this report includes the full styled tables."])
     for competitor_set in competitor_sets or []:
-        lines.extend(["", f"{_competitor_set_title(competitor_set)}:", _build_plaintext_table(_competitor_set_rows(competitor_set))])
+        lines.extend(
+            [
+                "",
+                f"{_competitor_set_title(competitor_set)}:",
+                _competitor_set_description(competitor_set),
+                _build_plaintext_table(_competitor_set_rows(competitor_set)),
+            ]
+        )
     return "\n".join(lines)
 
 
@@ -1018,6 +1038,7 @@ def _build_competitor_set_sections_html(competitor_sets: list) -> str:
     <section class="table-card" id="{escape(_competitor_set_id(competitor_set))}">
       <p class="insight-kicker">Competitor set</p>
       <h2>{escape(title)}</h2>
+      <p>{escape(_competitor_set_description(competitor_set))}</p>
       <div class="table-wrap">
         {_build_html_table(rows, include_benchmark_marker=True, include_benchmark_highlight=False)}
       </div>

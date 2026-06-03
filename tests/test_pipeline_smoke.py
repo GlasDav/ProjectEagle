@@ -349,6 +349,101 @@ def test_average_rows_are_appended_to_both_tables(tmp_path, monkeypatch):
     assert captured["relative_rows"][-1]["MTD"] == pytest.approx(0.02)
 
 
+def test_competitor_sets_can_mix_relative_and_absolute_performance_modes():
+    benchmark_row = {
+        "Fund": "Benchmark",
+        "Style": "",
+        "is_benchmark": True,
+        "is_stale": False,
+        "error": False,
+        "stale_days": 0,
+        "latest_date": pd.Timestamp("2024-04-03"),
+        **{period: 0.10 for period in main.PERIODS},
+    }
+    long_absolute = {
+        "Fund": "Long Fund",
+        "Style": "Agnostic",
+        "is_benchmark": False,
+        "is_stale": False,
+        "error": False,
+        "stale_days": 0,
+        "latest_date": pd.Timestamp("2024-04-03"),
+        **{period: 0.30 for period in main.PERIODS},
+    }
+    long_relative = {
+        "Fund": "Long Fund",
+        "Style": "Agnostic",
+        "is_stale": False,
+        "error": False,
+        "stale_days": 0,
+        "latest_date": pd.Timestamp("2024-04-03"),
+        **{period: 0.20 for period in main.PERIODS},
+    }
+    absolute_absolute = {
+        "Fund": "Absolute Fund",
+        "Style": "Agnostic",
+        "is_benchmark": False,
+        "is_stale": False,
+        "error": False,
+        "stale_days": 0,
+        "latest_date": pd.Timestamp("2024-04-03"),
+        **{period: 0.40 for period in main.PERIODS},
+    }
+    absolute_relative = {
+        "Fund": "Absolute Fund",
+        "Style": "Agnostic",
+        "is_stale": False,
+        "error": False,
+        "stale_days": 0,
+        "latest_date": pd.Timestamp("2024-04-03"),
+        **{period: 0.30 for period in main.PERIODS},
+    }
+    config = {
+        "funds": [
+            {"name": "Long Fund"},
+            {"name": "Absolute Fund"},
+        ],
+        "competitor_sets": [
+            {
+                "id": "long_short_funds",
+                "title": "Long-short funds",
+                "performance_mode": "relative",
+                "funds": ["Long Fund"],
+            },
+            {
+                "id": "market_neutral_funds",
+                "title": "Absolute return funds",
+                "performance_mode": "absolute",
+                "funds": ["Absolute Fund"],
+            },
+        ],
+    }
+
+    results = main.build_competitor_set_results(
+        config,
+        benchmark_row=benchmark_row,
+        benchmark_returns={period: 0.10 for period in main.PERIODS},
+        as_of_date=pd.Timestamp("2024-04-03"),
+        start_date="2024-04-01",
+        use_cache=False,
+        cache_date=pd.Timestamp("2024-04-03"),
+        row_cache={
+            "Long Fund": (long_absolute, long_relative),
+            "Absolute Fund": (absolute_absolute, absolute_relative),
+        },
+    )
+
+    long_short, absolute_return = results
+    assert long_short.performance_mode == "relative"
+    assert long_short.rows[0]["is_benchmark"] is True
+    assert long_short.rows[1]["Fund"] == "Long Fund"
+    assert long_short.rows[1]["MTD"] == pytest.approx(0.20)
+    assert absolute_return.performance_mode == "absolute"
+    assert absolute_return.rows[0]["is_benchmark"] is True
+    assert absolute_return.rows[1]["Fund"] == "Absolute Fund"
+    assert absolute_return.rows[1]["MTD"] == pytest.approx(0.40)
+
+
 def test_staleness_respects_configured_threshold(tmp_path, monkeypatch):
     benchmark_csv = tmp_path / "benchmark.csv"
     benchmark_csv.write_text("date,nav\n2024-04-01,100\n2024-04-10,101\n", encoding="utf-8")

@@ -38,6 +38,7 @@ class FundResult:
 class CompetitorSetResult:
     id: str
     title: str
+    performance_mode: str
     rows: list[dict[str, Any]]
 
 
@@ -124,6 +125,9 @@ def validate_competitor_sets(config: dict[str, Any]) -> None:
         if set_id in seen_ids:
             raise ValueError(f"Duplicate competitor set id: {set_id}")
         seen_ids.add(set_id)
+        performance_mode = str(competitor_set.get("performance_mode") or "relative").strip().casefold()
+        if performance_mode not in {"relative", "absolute"}:
+            raise ValueError(f"Competitor set '{set_id}' has unsupported performance_mode: {performance_mode}")
 
         missing = [str(name) for name in fund_names if str(name).strip().casefold() not in funds_by_name]
         if missing:
@@ -443,6 +447,7 @@ def build_competitor_set_results(
     results: list[CompetitorSetResult] = []
 
     for competitor_set in config.get("competitor_sets") or []:
+        performance_mode = str(competitor_set.get("performance_mode") or "relative").strip().casefold()
         absolute_rows = [benchmark_row]
         relative_rows: list[dict[str, Any]] = []
         for configured_name in competitor_set["funds"]:
@@ -463,11 +468,12 @@ def build_competitor_set_results(
             relative_rows.append(relative_row)
 
         sorted_absolute, sorted_relative = sort_report_rows(absolute_rows, relative_rows)
-        table_rows = [sorted_absolute[0], *sorted_relative]
+        table_rows = sorted_absolute if performance_mode == "absolute" else [sorted_absolute[0], *sorted_relative]
         results.append(
             CompetitorSetResult(
                 id=str(competitor_set["id"]),
                 title=str(competitor_set["title"]),
+                performance_mode=performance_mode,
                 rows=table_rows,
             )
         )

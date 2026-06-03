@@ -284,6 +284,18 @@ def _competitor_set_rows(competitor_set) -> list[dict]:
     return list(getattr(competitor_set, "rows", []) or [])
 
 
+def _competitor_set_performance_mode(competitor_set) -> str:
+    if isinstance(competitor_set, dict):
+        return str(competitor_set.get("performance_mode") or "relative").strip().casefold()
+    return str(getattr(competitor_set, "performance_mode", "relative") or "relative").strip().casefold()
+
+
+def _competitor_set_description(competitor_set, report_date_label: str) -> str:
+    if _competitor_set_performance_mode(competitor_set) == "absolute":
+        return f"Absolute total-return peer-set table as at {report_date_label}."
+    return f"Benchmark-relative excess-return peer-set table as at {report_date_label}."
+
+
 def _adaptive_table_column(items: list[dict[str, Any]], *, width: str) -> dict[str, Any]:
     return {"type": "Column", "width": width, "items": items}
 
@@ -606,7 +618,7 @@ def _build_adaptive_teams_message_card(absolute_rows: list[dict], relative_rows:
                 rows=_competitor_set_rows(competitor_set),
                 title=_competitor_set_title(competitor_set),
                 summary=summary,
-                description=f"Peer-set table as at {report_date_label}.",
+                description=_competitor_set_description(competitor_set, report_date_label),
                 include_benchmark_highlight=False,
             )
         )
@@ -714,7 +726,7 @@ def _build_legacy_teams_message_card(absolute_rows: list[dict], relative_rows: l
                 title=_competitor_set_title(competitor_set),
                 summary=summary,
                 text=text,
-                description=f"Peer-set table as at {report_date_label}.",
+                description=_competitor_set_description(competitor_set, report_date_label),
                 include_benchmark_highlight=False,
             )
         )

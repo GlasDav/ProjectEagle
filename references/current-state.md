@@ -47,6 +47,11 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - `--report-date YYYY-MM-DD` pins calculations to the benchmark date on or before the requested date and skips the best-coverage date selector.
 - GitHub Actions manual runs expose an optional `report_date` input, using `--report-date` only when that input is provided.
 
+### Peer-set performance modes
+
+- Long-short funds are rendered as benchmark-relative excess returns.
+- Absolute return funds are rendered as absolute total-return performance.
+
 ### Distribution timing
 
 - Firetrail High Conviction Fund and Fidelity Australian Equities Fund now use `distribution_timing: next_price_date`.

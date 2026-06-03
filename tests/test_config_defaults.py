@@ -37,6 +37,7 @@ def test_live_config_declares_requested_competitor_sets_and_keeps_peer_only_fund
     config = load_config(repo_root / "config.yaml")
 
     competitor_sets = {competitor_set["id"]: competitor_set for competitor_set in config["competitor_sets"]}
+    assert competitor_sets["long_short_funds"]["performance_mode"] == "relative"
     assert competitor_sets["long_short_funds"]["funds"] == [
         "Firetrail Alpha Plus Fund Complex ETF",
         "Ten Cap Alpha Plus Complex ETF",
@@ -45,6 +46,7 @@ def test_live_config_declares_requested_competitor_sets_and_keeps_peer_only_fund
         "Acadian Australian Equity Long Short Fund",
         "Vinva Australian Equity Alpha Extension Fund",
     ]
+    assert competitor_sets["market_neutral_funds"]["performance_mode"] == "absolute"
     assert competitor_sets["market_neutral_funds"]["funds"] == [
         "Firetrail Absolute Return Fund",
         "Sage Capital Absolute Return Fund",
