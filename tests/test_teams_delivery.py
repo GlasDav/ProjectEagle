@@ -352,7 +352,7 @@ def test_teams_payloads_include_relative_and_peer_tables_without_absolute_table(
     assert "Benchmark row shows absolute benchmark total returns" not in relative_section["text"]
 
 
-def test_adaptive_default_sized_main_table_fits_under_safety_cap_without_compacting():
+def test_adaptive_default_sized_main_table_compacts_before_splitting():
     absolute_rows, _ = _sample_rows()
     relative_rows = _ranked_rows(23)
 
@@ -369,15 +369,13 @@ def test_adaptive_default_sized_main_table_fits_under_safety_cap_without_compact
 
     assert len(payloads) == 2
     assert all(_payload_size(payload) <= MAX_TEAMS_CARD_BYTES for payload in table_payloads)
-    assert table_rows[0][0]["columns"][0]["items"][0]["text"] == "Fund"
-    assert table_rows[0][0]["columns"][1]["items"][0]["text"] == "Style"
+    assert table_rows[0][0]["columns"][0]["items"][0]["text"] == "Fund [Style]"
     assert sum(len(rows) - 1 for rows in table_rows) == 23
-    assert table_rows[0][1]["columns"][0]["items"][0]["text"] == "Fund 1"
-    assert table_rows[0][1]["columns"][1]["items"][0]["text"] == "Growth"
-    assert table_rows[-1][-1]["columns"][0]["items"][0]["text"] == "Fund 23"
-    assert "Fund [Style]" not in payload_json
-    assert "\N{LARGE GREEN CIRCLE}" not in payload_json
-    assert "\N{LARGE RED CIRCLE}" not in payload_json
+    assert table_rows[0][1]["columns"][0]["items"][0]["text"] == "Fund 1 [Growth]"
+    assert table_rows[-1][-1]["columns"][0]["items"][0]["text"] == "Fund 23 [Growth]"
+    assert "Fund [Style]" in payload_json
+    assert "\N{LARGE GREEN CIRCLE}" in payload_json
+    assert "\N{LARGE RED CIRCLE}" in payload_json
 
 
 def test_adaptive_main_table_splits_regular_tables_when_compact_table_is_too_large():

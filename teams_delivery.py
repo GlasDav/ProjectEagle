@@ -15,7 +15,7 @@ from table_highlighting import HIGHLIGHT_BOTTOM, HIGHLIGHT_TOP, PerformanceHighl
 LEGACY_TOP_MARKER = "\N{LARGE GREEN CIRCLE}"
 LEGACY_BOTTOM_MARKER = "\N{LARGE RED CIRCLE}"
 LEGACY_HIGHLIGHT_LEGEND = "Green circles mark best performers; red circles mark worst performers."
-MAX_TEAMS_CARD_BYTES = 27_000
+MAX_TEAMS_CARD_BYTES = 24_000
 DEFAULT_TEAMS_POST_DELAY_SECONDS = 1.0
 
 
@@ -569,6 +569,10 @@ def _build_adaptive_table_cards(
     if not split_large_table or _payload_size(regular_payload) <= MAX_TEAMS_CARD_BYTES:
         return [regular_payload]
 
+    compact_payload = build_payload(rows, 1, 1, compact=True)
+    if _payload_size(compact_payload) <= MAX_TEAMS_CARD_BYTES:
+        return [compact_payload]
+
     regular_chunks = _split_rows_for_size_with_offsets(
         rows,
         lambda chunk_rows, index, chunk_count, row_offset: build_payload(
@@ -580,10 +584,6 @@ def _build_adaptive_table_cards(
     )
     if all(_payload_size(payload) <= MAX_TEAMS_CARD_BYTES for payload in regular_chunks):
         return regular_chunks
-
-    compact_payload = build_payload(rows, 1, 1, compact=True)
-    if _payload_size(compact_payload) <= MAX_TEAMS_CARD_BYTES:
-        return [compact_payload]
 
     return _split_rows_for_size_with_offsets(
         rows,
