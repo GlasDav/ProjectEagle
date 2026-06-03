@@ -4,7 +4,13 @@ import json
 
 import pandas as pd
 
-from teams_delivery import MAX_TEAMS_CARD_BYTES, build_teams_message_card, send_teams_message_card, teams_webhook_payload_mode
+from teams_delivery import (
+    DEFAULT_TEAMS_POST_DELAY_SECONDS,
+    MAX_TEAMS_CARD_BYTES,
+    build_teams_message_card,
+    send_teams_message_card,
+    teams_webhook_payload_mode,
+)
 
 
 def _sample_rows():
@@ -552,6 +558,48 @@ def test_send_teams_message_card_posts_payloads_in_order_with_delays():
         "Absolute return funds",
     ]
     assert delays == [0.25, 0.25, 0.25]
+
+
+def test_send_teams_message_card_uses_conservative_default_delay_to_preserve_order():
+    class FakeResponse:
+        status_code = 200
+        text = ""
+
+    class FakeSession:
+        def __init__(self):
+            self.posts = []
+
+        def post(self, webhook_url, json, timeout):
+            self.posts.append(json)
+            return FakeResponse()
+
+    absolute_rows, _ = _sample_rows()
+    relative_rows = _ranked_rows(23)
+    session = FakeSession()
+    delays = []
+
+    send_teams_message_card(
+        "https://example.com/webhook",
+        absolute_rows,
+        relative_rows,
+        pd.Timestamp("2026-03-29"),
+        competitor_sets=[
+            {"id": "long_short", "title": "Long-short funds", "rows": _ranked_rows(2)},
+            *_competitor_sets(),
+        ],
+        session=session,
+        sleeper=delays.append,
+    )
+    posted_titles = [post["attachments"][0]["content"]["body"][0]["text"] for post in session.posts]
+
+    assert DEFAULT_TEAMS_POST_DELAY_SECONDS == 3.0
+    assert posted_titles == [
+        "Australian Equity Fund Scorecard | 2026-03-29",
+        "Relative performance table",
+        "Long-short funds",
+        "Absolute return funds",
+    ]
+    assert delays == [3.0, 3.0, 3.0]
 
 
 def test_teams_webhook_payload_mode_identifies_legacy_and_adaptive_urls():
