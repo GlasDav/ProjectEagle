@@ -313,6 +313,8 @@ def _build_adaptive_table(
     top_n: int = 3,
     bottom_n: int = 3,
     include_benchmark_highlight: bool = False,
+    highlights: dict[tuple[int, str], PerformanceHighlight] | None = None,
+    row_offset: int = 0,
 ) -> dict[str, Any]:
     """Build a Teams-safe table from ColumnSet rows.
 
@@ -324,13 +326,14 @@ def _build_adaptive_table(
 
     headers = ["Fund", "Style", *[f"{period} (p.a.)" if period in {"3Y", "5Y"} else period for period in PERIODS]]
     column_widths = ["360px", "78px", "58px", "58px", "58px", "64px", "76px", "76px"]
-    highlights = build_period_highlights(
-        rows_source,
-        periods=PERIODS,
-        top_n=top_n,
-        bottom_n=bottom_n,
-        include_benchmark=include_benchmark_highlight,
-    )
+    if highlights is None:
+        highlights = build_period_highlights(
+            rows_source,
+            periods=PERIODS,
+            top_n=top_n,
+            bottom_n=bottom_n,
+            include_benchmark=include_benchmark_highlight,
+        )
 
     header_cells = [
         _adaptive_table_column(
@@ -365,7 +368,7 @@ def _build_adaptive_table(
             ),
         ]
         for period in PERIODS:
-            highlight = highlights.get((row_index, period))
+            highlight = highlights.get((row_offset + row_index, period))
             value_block = _value_text_block(
                 row.get(period),
                 error=row.get("error", False),
@@ -385,14 +388,17 @@ def _build_compact_adaptive_table(
     top_n: int = 3,
     bottom_n: int = 3,
     include_benchmark_highlight: bool = False,
+    highlights: dict[tuple[int, str], PerformanceHighlight] | None = None,
+    row_offset: int = 0,
 ) -> dict[str, Any]:
-    highlights = build_period_highlights(
-        rows_source,
-        periods=PERIODS,
-        top_n=top_n,
-        bottom_n=bottom_n,
-        include_benchmark=include_benchmark_highlight,
-    )
+    if highlights is None:
+        highlights = build_period_highlights(
+            rows_source,
+            periods=PERIODS,
+            top_n=top_n,
+            bottom_n=bottom_n,
+            include_benchmark=include_benchmark_highlight,
+        )
     items: list[dict[str, Any]] = [
         _text_block(LEGACY_HIGHLIGHT_LEGEND, color="Accent"),
         _adaptive_table_row(
@@ -418,7 +424,7 @@ def _build_compact_adaptive_table(
         metric_text = " | ".join(
             _format_highlighted_percent(
                 None if row.get("error") else row.get(period),
-                highlights.get((row_index, period)),
+                highlights.get((row_offset + row_index, period)),
             )
             if not row.get("error")
             else "Error"
@@ -455,24 +461,40 @@ def _payload_size(payload: dict[str, Any]) -> int:
 
 
 def _split_rows_for_size(rows: list[dict], build_payload) -> list[dict[str, Any]]:
-    if not rows:
-        return [build_payload([], 1, 1)]
+    return _split_rows_for_size_with_offsets(
+        rows,
+        lambda chunk_rows, index, chunk_count, _row_offset: build_payload(chunk_rows, index, chunk_count),
+    )
 
-    chunks: list[list[dict]] = []
+
+def _split_rows_for_size_with_offsets(
+    rows: list[dict],
+    build_payload: Callable[[list[dict], int, int, int], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not rows:
+        return [build_payload([], 1, 1, 0)]
+
+    chunks: list[tuple[int, list[dict]]] = []
     chunk: list[dict] = []
-    for row in rows:
+    chunk_start = 0
+    for row_index, row in enumerate(rows):
         candidate = [*chunk, row]
         # Use a deliberately high chunk count while sizing so final titles are no longer than the probe title.
-        if chunk and _payload_size(build_payload(candidate, len(chunks) + 1, 99)) > MAX_TEAMS_CARD_BYTES:
-            chunks.append(chunk)
+        if chunk and _payload_size(build_payload(candidate, len(chunks) + 1, 99, chunk_start)) > MAX_TEAMS_CARD_BYTES:
+            chunks.append((chunk_start, chunk))
             chunk = [row]
+            chunk_start = row_index
         else:
             chunk = candidate
     if chunk:
-        chunks.append(chunk)
+        chunks.append((chunk_start, chunk))
 
     chunk_count = len(chunks)
-    return [build_payload(chunk_rows, index, chunk_count) for index, chunk_rows in enumerate(chunks, start=1)]
+    return [
+        build_payload(chunk_rows, index, chunk_count, row_offset)
+        for index, (row_offset, chunk_rows) in enumerate(chunks, start=1)
+    ]
+
 
 def _adaptive_message_payload(body: list[dict[str, Any]], summary: str) -> dict[str, Any]:
     return {
@@ -507,15 +529,38 @@ def _build_adaptive_table_cards(
     include_benchmark_highlight: bool = False,
     split_large_table: bool = False,
 ) -> list[dict[str, Any]]:
-    def build_payload(chunk_rows: list[dict], index: int, chunk_count: int, *, compact: bool = False) -> dict[str, Any]:
+    highlights = build_period_highlights(
+        rows,
+        periods=PERIODS,
+        include_benchmark=include_benchmark_highlight,
+    )
+
+    def build_payload(
+        chunk_rows: list[dict],
+        index: int,
+        chunk_count: int,
+        *,
+        compact: bool = False,
+        row_offset: int = 0,
+    ) -> dict[str, Any]:
         table_title = _table_title(title, index, chunk_count)
         body = [
             _text_block(table_title, weight="Bolder", size="Medium"),
             _text_block(description),
             (
-                _build_compact_adaptive_table(chunk_rows, include_benchmark_highlight=include_benchmark_highlight)
+                _build_compact_adaptive_table(
+                    chunk_rows,
+                    include_benchmark_highlight=include_benchmark_highlight,
+                    highlights=highlights,
+                    row_offset=row_offset,
+                )
                 if compact
-                else _build_adaptive_table(chunk_rows, include_benchmark_highlight=include_benchmark_highlight)
+                else _build_adaptive_table(
+                    chunk_rows,
+                    include_benchmark_highlight=include_benchmark_highlight,
+                    highlights=highlights,
+                    row_offset=row_offset,
+                )
             ),
         ]
         return _adaptive_message_payload(body, summary)
@@ -524,13 +569,31 @@ def _build_adaptive_table_cards(
     if not split_large_table or _payload_size(regular_payload) <= MAX_TEAMS_CARD_BYTES:
         return [regular_payload]
 
+    regular_chunks = _split_rows_for_size_with_offsets(
+        rows,
+        lambda chunk_rows, index, chunk_count, row_offset: build_payload(
+            chunk_rows,
+            index,
+            chunk_count,
+            row_offset=row_offset,
+        ),
+    )
+    if all(_payload_size(payload) <= MAX_TEAMS_CARD_BYTES for payload in regular_chunks):
+        return regular_chunks
+
     compact_payload = build_payload(rows, 1, 1, compact=True)
     if _payload_size(compact_payload) <= MAX_TEAMS_CARD_BYTES:
         return [compact_payload]
 
-    return _split_rows_for_size(
+    return _split_rows_for_size_with_offsets(
         rows,
-        lambda chunk_rows, index, chunk_count: build_payload(chunk_rows, index, chunk_count, compact=True),
+        lambda chunk_rows, index, chunk_count, row_offset: build_payload(
+            chunk_rows,
+            index,
+            chunk_count,
+            compact=True,
+            row_offset=row_offset,
+        ),
     )
 
 
