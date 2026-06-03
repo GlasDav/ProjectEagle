@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 
-from teams_delivery import build_teams_message_card, send_teams_message_card, teams_webhook_payload_mode
+from teams_delivery import MAX_TEAMS_CARD_BYTES, build_teams_message_card, send_teams_message_card, teams_webhook_payload_mode
 
 
 def _sample_rows():
@@ -216,6 +218,10 @@ def _adaptive_table_rows(table):
     return [item for item in table["items"] if item.get("type") == "ColumnSet"]
 
 
+def _payload_size(payload):
+    return len(json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8"))
+
+
 def test_adaptive_card_column_widths_are_strings():
     absolute_rows, relative_rows = _sample_rows()
     payloads = build_teams_message_card(
@@ -360,10 +366,13 @@ def test_adaptive_default_sized_main_table_stays_in_one_message():
     assert len(payloads) == 2
     table = payloads[1]["attachments"][0]["content"]["body"][-1]
     assert payloads[1]["attachments"][0]["content"]["body"][0]["text"] == "Relative performance table"
+    assert _payload_size(payloads[1]) <= MAX_TEAMS_CARD_BYTES
+    assert _adaptive_table_rows(table)[0]["columns"][0]["items"][0]["text"] == "Fund [Style]"
+    assert _adaptive_table_rows(table)[1]["columns"][0]["items"][0]["text"] == "Fund 1 [Growth]"
     assert len(_adaptive_table_rows(table)) == 24
 
 
-def test_adaptive_main_table_splits_into_two_messages_when_large():
+def test_adaptive_main_table_compacts_before_splitting_when_large():
     absolute_rows, _ = _sample_rows()
     relative_rows = _ranked_rows(80)
 
@@ -375,10 +384,15 @@ def test_adaptive_main_table_splits_into_two_messages_when_large():
     )
 
     assert len(payloads) == 3
-    first_table = payloads[1]["attachments"][0]["content"]["body"][-1]
-    second_table = payloads[2]["attachments"][0]["content"]["body"][-1]
-    assert len(_adaptive_table_rows(first_table)) == 41
-    assert len(_adaptive_table_rows(second_table)) == 41
+    table_payloads = payloads[1:]
+    tables = [payload["attachments"][0]["content"]["body"][-1] for payload in table_payloads]
+    table_rows = [_adaptive_table_rows(table) for table in tables]
+
+    assert all(_payload_size(payload) <= MAX_TEAMS_CARD_BYTES for payload in table_payloads)
+    assert all(rows[0]["columns"][0]["items"][0]["text"] == "Fund [Style]" for rows in table_rows)
+    assert sum(len(rows) - 1 for rows in table_rows) == 80
+    assert table_rows[0][1]["columns"][0]["items"][0]["text"] == "Fund 1 [Growth]"
+    assert table_rows[-1][-1]["columns"][0]["items"][0]["text"] == "Fund 80 [Growth]"
     titles = [
         block.get("text")
         for payload in payloads

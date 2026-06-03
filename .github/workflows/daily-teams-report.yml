@@ -2,6 +2,11 @@ name: Daily Teams Report
 
 on:
   workflow_dispatch:
+    inputs:
+      report_date:
+        description: "Optional exact report date (YYYY-MM-DD). Defaults to T-2 Sydney with best-coverage selection."
+        required: false
+        type: string
   schedule:
     # 10:37 Australia/Sydney during daylight saving time.
     - cron: "37 23 * * *"
@@ -30,9 +35,16 @@ jobs:
         shell: bash
         env:
           TRIGGERING_SCHEDULE: ${{ github.event.schedule }}
+          DISPATCH_REPORT_DATE: ${{ github.event.inputs.report_date || '' }}
         run: |
           SYDNEY_OFFSET=$(TZ=Australia/Sydney date +%z)
-          REPORT_DATE=$(TZ=Australia/Sydney date -d '2 days ago' +%F)
+          DEFAULT_REPORT_DATE=$(TZ=Australia/Sydney date -d '2 days ago' +%F)
+          REPORT_DATE="$DEFAULT_REPORT_DATE"
+          REPORT_DATE_OPTION="--as-of"
+          if [ -n "$DISPATCH_REPORT_DATE" ]; then
+            REPORT_DATE="$DISPATCH_REPORT_DATE"
+            REPORT_DATE_OPTION="--report-date"
+          fi
           EXPECTED_SCHEDULE="37 0 * * *"
           if [ "$SYDNEY_OFFSET" = "+1100" ]; then
             EXPECTED_SCHEDULE="37 23 * * *"
@@ -42,6 +54,7 @@ jobs:
           echo "triggering_schedule=$TRIGGERING_SCHEDULE" >> "$GITHUB_OUTPUT"
           echo "expected_schedule=$EXPECTED_SCHEDULE" >> "$GITHUB_OUTPUT"
           echo "report_date=$REPORT_DATE" >> "$GITHUB_OUTPUT"
+          echo "report_date_option=$REPORT_DATE_OPTION" >> "$GITHUB_OUTPUT"
 
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$TRIGGERING_SCHEDULE" = "$EXPECTED_SCHEDULE" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
@@ -76,7 +89,7 @@ jobs:
         run: |
           python main.py \
             --no-cache \
-            --as-of "${{ steps.schedule.outputs.report_date }}" \
+            "${{ steps.schedule.outputs.report_date_option }}" "${{ steps.schedule.outputs.report_date }}" \
             --export html \
             --output-dir reports \
             --send-teams

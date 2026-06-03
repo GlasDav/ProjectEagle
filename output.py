@@ -381,6 +381,16 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
         for label, value, note in summary_cards
     )
     competitor_sections_html = _build_competitor_set_sections_html(competitor_sets or [])
+    relative_page_class = "table-card print-page relative-page" + ("" if competitor_sections_html else " last-print-page")
+    competitor_page_html = (
+        f"""
+    <section class="print-page competitor-page last-print-page">
+      {competitor_sections_html}
+    </section>
+        """
+        if competitor_sections_html
+        else ""
+    )
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -408,9 +418,9 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
       --red-soft: #f6dfd9;
       --neutral: #58656a;
       --neutral-soft: #edf1f2;
-      --shadow: 0 18px 40px rgba(25, 47, 42, 0.12);
-      --radius-lg: 26px;
-      --radius-md: 18px;
+      --shadow: 0 8px 18px rgba(25, 47, 42, 0.09);
+      --radius-lg: 12px;
+      --radius-md: 9px;
       --radius-sm: 999px;
     }}
     * {{
@@ -426,12 +436,12 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
         linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
     }}
     .shell {{
-      width: min(1200px, calc(100% - 32px));
+      width: min(1600px, calc(100% - 20px));
       margin: 0 auto;
-      padding: 32px 0 40px;
+      padding: 10px 0 14px;
     }}
     .hero {{
-      padding: 32px;
+      padding: 12px 16px;
       border: 1px solid rgba(255, 255, 255, 0.55);
       border-radius: var(--radius-lg);
       background: linear-gradient(135deg, rgba(21, 54, 47, 0.92), rgba(31, 106, 91, 0.88));
@@ -444,54 +454,54 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
       content: "";
       position: absolute;
       inset: auto -10% -35% auto;
-      width: 320px;
-      height: 320px;
+      width: 130px;
+      height: 130px;
       border-radius: 50%;
       background: rgba(255, 255, 255, 0.08);
     }}
     .eyebrow {{
-      margin: 0 0 10px;
+      margin: 0 0 3px;
       text-transform: uppercase;
       letter-spacing: 0.18em;
-      font-size: 12px;
+      font-size: 9px;
       opacity: 0.78;
     }}
     h1 {{
       margin: 0;
-      font-size: clamp(34px, 5vw, 54px);
-      line-height: 1.02;
-      max-width: 12ch;
+      font-size: clamp(24px, 2.2vw, 34px);
+      line-height: 1;
+      max-width: none;
     }}
     .lede {{
-      margin: 16px 0 0;
-      max-width: 760px;
-      font-size: 17px;
-      line-height: 1.6;
+      margin: 5px 0 0;
+      max-width: 1120px;
+      font-size: 12px;
+      line-height: 1.2;
       color: rgba(247, 243, 235, 0.9);
     }}
     .hero-meta {{
       display: flex;
       flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 22px;
+      gap: 4px;
+      margin-top: 6px;
     }}
     .badge {{
       display: inline-flex;
       align-items: center;
-      padding: 10px 14px;
+      padding: 3px 7px;
       border-radius: var(--radius-sm);
       background: rgba(255, 255, 255, 0.12);
       border: 1px solid rgba(255, 255, 255, 0.18);
-      font-size: 14px;
+      font-size: 11px;
     }}
     .stats {{
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 16px;
-      margin-top: 22px;
+      gap: 8px;
+      margin-top: 8px;
     }}
     .stat-card {{
-      padding: 22px;
+      padding: 7px 9px;
       border-radius: var(--radius-md);
       background: var(--panel);
       border: 1px solid rgba(255, 255, 255, 0.6);
@@ -503,67 +513,68 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      font-size: 12px;
+      font-size: 9px;
     }}
     .stat-value {{
-      margin: 10px 0 8px;
-      font-size: 34px;
+      margin: 3px 0 2px;
+      font-size: 20px;
       font-weight: 700;
-      line-height: 1.05;
+      line-height: 1;
     }}
     .stat-note {{
       margin: 0;
       color: var(--muted);
-      line-height: 1.5;
-      font-size: 14px;
+      line-height: 1.15;
+      font-size: 10px;
     }}
     .insights {{
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 16px;
-      margin-top: 16px;
+      gap: 8px;
+      margin-top: 8px;
     }}
     .insight-card,
     .table-card {{
-      padding: 24px;
+      padding: 9px 10px;
       border-radius: var(--radius-lg);
       background: var(--panel-strong);
       border: 1px solid rgba(255, 255, 255, 0.65);
       box-shadow: var(--shadow);
     }}
     .insight-kicker {{
-      margin: 0 0 10px;
+      margin: 0 0 3px;
       color: var(--warm);
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      font-size: 12px;
+      font-size: 9px;
     }}
     .insight-card h2,
     .table-card h2 {{
       margin: 0;
-      font-size: 24px;
-      line-height: 1.2;
+      font-size: 16px;
+      line-height: 1.1;
     }}
     .insight-card p,
     .table-card p {{
-      margin: 10px 0 0;
+      margin: 4px 0 0;
       color: var(--muted);
-      line-height: 1.6;
+      line-height: 1.2;
+      font-size: 12px;
     }}
     .leader-list {{
       list-style: none;
-      margin: 18px 0 0;
+      margin: 6px 0 0;
       padding: 0;
       display: grid;
-      gap: 10px;
+      gap: 4px;
     }}
     .leader-list li {{
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 16px;
-      padding: 12px 14px;
-      border-radius: 16px;
+      gap: 10px;
+      padding: 4px 7px;
+      border-radius: 8px;
       background: #f8faf7;
       border: 1px solid var(--border);
     }}
@@ -576,26 +587,38 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
       font-weight: 700;
     }}
     .table-card {{
-      margin-top: 16px;
+      margin-top: 8px;
     }}
     .table-wrap {{
-      margin-top: 18px;
+      margin-top: 6px;
       overflow-x: auto;
-      border-radius: 18px;
+      border-radius: 10px;
       border: 1px solid var(--border);
     }}
     table {{
       width: 100%;
       border-collapse: collapse;
-      min-width: 760px;
+      min-width: 980px;
       background: white;
+      table-layout: fixed;
+      font-size: 12.5px;
+    }}
+    .fund-column {{
+      width: 41%;
+    }}
+    .style-column {{
+      width: 8%;
+    }}
+    .metric-column {{
+      width: 8.5%;
     }}
     th,
     td {{
-      padding: 14px 16px;
+      padding: 2px 5px;
       text-align: left;
       border-bottom: 1px solid #eef1ec;
-      vertical-align: top;
+      vertical-align: middle;
+      line-height: 1.12;
     }}
     th {{
       position: sticky;
@@ -603,9 +626,13 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
       z-index: 1;
       background: #f5f7f2;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 10px;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+    }}
+    .metric-heading,
+    .metric-cell {{
+      text-align: right;
     }}
     th:first-child,
     td:first-child {{
@@ -641,21 +668,24 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
     .fund-name {{
       font-weight: 700;
       color: var(--ink);
+      font-size: 12.5px;
     }}
     .fund-meta {{
-      margin-top: 6px;
+      margin-top: 2px;
       color: var(--muted);
-      font-size: 13px;
+      font-size: 9px;
+      line-height: 1.12;
     }}
     .pill {{
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: 76px;
-      padding: 8px 10px;
+      min-width: 46px;
+      padding: 1px 3px;
       border-radius: var(--radius-sm);
       font-weight: 700;
-      font-size: 14px;
+      font-size: 12px;
+      line-height: 1.1;
       white-space: nowrap;
     }}
     .pill.positive {{
@@ -689,14 +719,14 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
       font-weight: 600;
     }}
     .footer {{
-      margin-top: 16px;
-      padding: 18px 24px;
-      border-radius: 20px;
+      margin-top: 8px;
+      padding: 8px 10px;
+      border-radius: 9px;
       background: rgba(255, 255, 255, 0.72);
       border: 1px solid rgba(255, 255, 255, 0.7);
       color: var(--muted);
-      line-height: 1.6;
-      font-size: 14px;
+      line-height: 1.2;
+      font-size: 11px;
     }}
     @media (max-width: 960px) {{
       .stats,
@@ -706,14 +736,14 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
     }}
     @media (max-width: 680px) {{
       .shell {{
-        width: min(100% - 18px, 1200px);
-        padding-top: 18px;
+        width: min(100% - 12px, 1600px);
+        padding-top: 8px;
       }}
       .hero,
       .stat-card,
       .insight-card,
       .table-card {{
-        padding: 18px;
+        padding: 10px;
       }}
       .stats,
       .insights {{
@@ -724,62 +754,232 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
         position: static;
       }}
     }}
+    @media print {{
+      @page {{
+        size: A4 landscape;
+        margin: 8mm;
+      }}
+      html,
+      body {{
+        background: #ffffff;
+      }}
+      body {{
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }}
+      .shell {{
+        width: 100%;
+        padding: 0;
+      }}
+      .print-page {{
+        break-after: page;
+        page-break-after: always;
+      }}
+      .print-page:last-of-type {{
+        break-after: auto;
+        page-break-after: auto;
+      }}
+      .last-print-page {{
+        break-after: auto;
+        page-break-after: auto;
+      }}
+      .hero,
+      .stat-card,
+      .insight-card,
+      .table-card,
+      .footer {{
+        box-shadow: none;
+        border-color: #ccd8d1;
+      }}
+      .hero {{
+        padding: 9px 11px;
+        color: var(--ink);
+        background: #edf5f1;
+      }}
+      .hero::after {{
+        display: none;
+      }}
+      .eyebrow,
+      .insight-kicker,
+      .stat-label,
+      th {{
+        letter-spacing: 0.04em;
+      }}
+      h1 {{
+        font-size: 26px;
+      }}
+      .lede {{
+        max-width: none;
+        font-size: 11px;
+        line-height: 1.15;
+      }}
+      .badge {{
+        padding: 2px 6px;
+        font-size: 10px;
+      }}
+      .stats {{
+        gap: 5px;
+        margin-top: 6px;
+      }}
+      .stat-card {{
+        padding: 5px 6px;
+      }}
+      .stat-value {{
+        font-size: 18px;
+      }}
+      .stat-note {{
+        font-size: 9px;
+        line-height: 1.1;
+      }}
+      .insights {{
+        gap: 5px;
+        margin-top: 6px;
+      }}
+      .insight-card,
+      .table-card {{
+        padding: 6px 7px;
+        border-radius: 6px;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }}
+      .insight-card h2,
+      .table-card h2 {{
+        font-size: 13px;
+      }}
+      .insight-card p,
+      .table-card p {{
+        font-size: 9px;
+        line-height: 1.12;
+      }}
+      .leader-list {{
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 3px;
+      }}
+      .leader-list li {{
+        display: block;
+        padding: 3px 4px;
+      }}
+      .leader-name,
+      .leader-value {{
+        display: block;
+        font-size: 9px;
+      }}
+      .table-card {{
+        margin-top: 6px;
+      }}
+      .table-wrap {{
+        overflow: visible;
+        margin-top: 4px;
+        border-radius: 4px;
+      }}
+      table {{
+        min-width: 0;
+        table-layout: fixed;
+        font-size: 8.6px;
+      }}
+      .fund-column {{
+        width: 41%;
+      }}
+      .style-column {{
+        width: 8%;
+      }}
+      .metric-column {{
+        width: 8.5%;
+      }}
+      th,
+      td {{
+        padding: 1px 3px;
+        line-height: 1.04;
+        vertical-align: middle;
+      }}
+      th {{
+        position: static;
+        font-size: 7px;
+      }}
+      th:first-child,
+      td:first-child {{
+        position: static;
+      }}
+      tr {{
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }}
+      .fund-name {{
+        font-size: 8.6px;
+        line-height: 1.04;
+      }}
+      .fund-meta {{
+        font-size: 7px;
+        line-height: 1.04;
+      }}
+      .pill {{
+        min-width: 0;
+        padding: 0 2px;
+        font-size: 8.6px;
+        line-height: 1.05;
+      }}
+      .footer {{
+        display: none;
+      }}
+    }}
   </style>
 </head>
 <body>
   <main class="shell">
-    <section class="hero">
-      <p class="eyebrow">Daily distribution-aware performance snapshot</p>
-      <h1>Australian Equity Fund Scorecard</h1>
-      <p class="lede">
-        A cleaner, more approachable view of manager performance for non-technical readers.
-        All figures are total return, and relative numbers are shown against the S&amp;P/ASX 200 Accumulation benchmark.
-      </p>
-      <div class="hero-meta">
-        <span class="badge">As of {as_of_date:%Y-%m-%d}</span>
-        <span class="badge">{snapshot['live_count']} live funds</span>
-        <span class="badge">{snapshot['stale_count']} stale public sources</span>
-      </div>
+    <section class="print-page scorecard-page">
+      <section class="hero">
+        <p class="eyebrow">Daily distribution-aware performance snapshot</p>
+        <h1>Australian Equity Fund Scorecard</h1>
+        <p class="lede">
+          A cleaner, more approachable view of manager performance for non-technical readers.
+          All figures are total return, and relative numbers are shown against the S&amp;P/ASX 200 Accumulation benchmark.
+        </p>
+        <div class="hero-meta">
+          <span class="badge">As of {as_of_date:%Y-%m-%d}</span>
+          <span class="badge">{snapshot['live_count']} live funds</span>
+          <span class="badge">{snapshot['stale_count']} stale public sources</span>
+        </div>
+      </section>
+
+      <section class="stats">
+        {cards_html}
+      </section>
+
+      <section class="insights">
+        <article class="insight-card">
+          <p class="insight-kicker">Benchmark pulse</p>
+          <h2>S&amp;P/ASX 200 Accumulation</h2>
+          <p>{benchmark_blurb}</p>
+        </article>
+        <article class="insight-card">
+          <p class="insight-kicker">Strongest total return</p>
+          <h2>Best 12M performer</h2>
+          <p>{best_absolute_blurb}</p>
+        </article>
+        <article class="insight-card">
+          <p class="insight-kicker">Strongest excess return</p>
+          <h2>Best 12M versus benchmark</h2>
+          <p>{best_relative_blurb}</p>
+        </article>
+      </section>
+
+      <section class="table-card">
+        <p class="insight-kicker">Style lens</p>
+        <h2>How styles are tracking</h2>
+        <p>{escape(str(snapshot['style_commentary']))}</p>
+      </section>
+
+      <section class="table-card">
+        <p class="insight-kicker">Leaderboard</p>
+        <h2>Top 12M funds</h2>
+        <p>The strongest trailing-12-month total-return results among live managers.</p>
+        <ul class="leader-list">
+          {leaders_html}
+        </ul>
+      </section>
     </section>
 
-    <section class="stats">
-      {cards_html}
-    </section>
-
-    <section class="insights">
-      <article class="insight-card">
-        <p class="insight-kicker">Benchmark pulse</p>
-        <h2>S&amp;P/ASX 200 Accumulation</h2>
-        <p>{benchmark_blurb}</p>
-      </article>
-      <article class="insight-card">
-        <p class="insight-kicker">Strongest total return</p>
-        <h2>Best 12M performer</h2>
-        <p>{best_absolute_blurb}</p>
-      </article>
-      <article class="insight-card">
-        <p class="insight-kicker">Strongest excess return</p>
-        <h2>Best 12M versus benchmark</h2>
-        <p>{best_relative_blurb}</p>
-      </article>
-    </section>
-
-    <section class="table-card">
-      <p class="insight-kicker">Style lens</p>
-      <h2>How styles are tracking</h2>
-      <p>{escape(str(snapshot['style_commentary']))}</p>
-    </section>
-
-    <section class="table-card">
-      <p class="insight-kicker">Leaderboard</p>
-      <h2>Top 12M funds</h2>
-      <p>The strongest trailing-12-month total-return results among live managers.</p>
-      <ul class="leader-list">
-        {leaders_html}
-      </ul>
-    </section>
-
-    <section class="table-card">
+    <section class="table-card print-page absolute-page">
       <p class="insight-kicker">Absolute performance</p>
       <h2>Total return table</h2>
       <p>Returns shown after reinvesting distributions where required. Green highlights mark the best results per period; red highlights mark the worst results.</p>
@@ -788,7 +988,7 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
       </div>
     </section>
 
-    <section class="table-card">
+    <section class="{relative_page_class}">
       <p class="insight-kicker">Relative performance</p>
       <h2>Return above or below benchmark</h2>
       <p>Relative performance shows each fund's excess return against the S&amp;P/ASX 200 Accumulation index.</p>
@@ -797,7 +997,7 @@ def build_html_report(absolute_rows: list[dict], relative_rows: list[dict], as_o
       </div>
     </section>
 
-    {competitor_sections_html}
+    {competitor_page_html}
 
     <section class="footer">
       Rows marked stale use the latest public fund date shown in the row, not the headline report date.
@@ -843,7 +1043,7 @@ def _build_html_table(
         include_benchmark=include_benchmark_highlight,
     )
     header_cells = "".join(
-        f"<th>{escape(f'{period} (p.a.)' if period in {'3Y', '5Y'} else period)}</th>" for period in PERIODS
+        f"<th class=\"metric-heading\">{escape(f'{period} (p.a.)' if period in {'3Y', '5Y'} else period)}</th>" for period in PERIODS
     )
 
     body_rows = []
@@ -857,6 +1057,9 @@ def _build_html_table(
             row_classes.append("firetrail-row")
         latest_date = row.get("latest_date")
         stale_meta = ""
+        fund_title = ""
+        if latest_date is not None:
+            fund_title = f" title=\"Public data through {_format_public_date(latest_date)}\""
         if _row_is_stale(row):
             stale_meta = (
                 f"<div class=\"fund-meta\">Public data through {_format_public_date(latest_date)} "
@@ -864,7 +1067,7 @@ def _build_html_table(
             )
         elif row.get("is_disabled"):
             stale_meta = f"<div class=\"fund-meta\">{escape(str(row.get('disabled_reason') or 'Source pending'))}</div>"
-        elif latest_date is not None:
+        elif _row_has_date_offset(row):
             stale_meta = f"<div class=\"fund-meta\">Public data through {_format_public_date(latest_date)}</div>"
 
         cells = "".join(
@@ -874,7 +1077,7 @@ def _build_html_table(
         body_rows.append(
             f"""
             <tr class="{' '.join(row_classes)}">
-              <td>
+              <td{fund_title}>
                 <div class="fund-name">{escape(str(row["Fund"]))}</div>
                 {stale_meta}
               </td>
@@ -886,6 +1089,16 @@ def _build_html_table(
 
     return f"""
     <table>
+      <colgroup>
+        <col class="fund-column">
+        <col class="style-column">
+        <col class="metric-column">
+        <col class="metric-column">
+        <col class="metric-column">
+        <col class="metric-column">
+        <col class="metric-column">
+        <col class="metric-column">
+      </colgroup>
       <thead>
         <tr>
           <th>Fund</th>
@@ -916,7 +1129,7 @@ def _build_html_value_cell(value: float | None, error: bool = False, highlight: 
         classes.append("negative")
 
     label = escape(_format_percent(value, error=error))
-    return f"<td><span class=\"{' '.join(classes)}\">{label}</span></td>"
+    return f"<td class=\"metric-cell\"><span class=\"{' '.join(classes)}\">{label}</span></td>"
 
 
 def _sheet_name(base: str, used_names: set[str]) -> str:

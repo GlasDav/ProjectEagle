@@ -12,9 +12,14 @@ def test_daily_workflow_uses_dst_crons_not_runner_start_hour_gate():
     workflow = yaml.load(workflow_text, Loader=yaml.BaseLoader)
 
     crons = [entry["cron"] for entry in workflow["on"]["schedule"]]
+    dispatch_inputs = workflow["on"]["workflow_dispatch"]["inputs"]
 
     assert crons == ["37 23 * * *", "37 0 * * *"]
+    assert dispatch_inputs["report_date"]["type"] == "string"
     assert "github.event.schedule" in workflow_text
+    assert "DISPATCH_REPORT_DATE" in workflow_text
+    assert 'REPORT_DATE_OPTION="--as-of"' in workflow_text
+    assert 'REPORT_DATE_OPTION="--report-date"' in workflow_text
     assert "LOCAL_HOUR" not in workflow_text
     assert "date +%H" not in workflow_text
 

@@ -173,6 +173,68 @@ def test_report_date_uses_date_available_for_most_funds(tmp_path, monkeypatch):
     assert next(row for row in captured["absolute_rows"] if row["Fund"] == "Fund C")["latest_date"] == pd.Timestamp("2024-04-01")
 
 
+def test_report_date_option_skips_best_coverage_date_selection(tmp_path, monkeypatch):
+    benchmark_csv = tmp_path / "benchmark.csv"
+    benchmark_csv.write_text("date,nav\n2024-04-01,100\n2024-04-02,101\n2024-04-03,102\n", encoding="utf-8")
+
+    fund_a_csv = tmp_path / "fund_a.csv"
+    fund_a_csv.write_text("date,nav\n2024-04-01,100\n2024-04-02,101\n", encoding="utf-8")
+    fund_b_csv = tmp_path / "fund_b.csv"
+    fund_b_csv.write_text("date,nav\n2024-04-01,100\n2024-04-02,102\n", encoding="utf-8")
+    fund_c_csv = tmp_path / "fund_c.csv"
+    fund_c_csv.write_text("date,nav\n2024-04-01,100\n2024-04-03,103\n", encoding="utf-8")
+
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "benchmark": {
+                    "name": "Benchmark",
+                    "source": "csv",
+                    "file": str(benchmark_csv),
+                    "nav_type": "total_return",
+                },
+                "funds": [
+                    {"name": "Fund A", "source": "csv", "file": str(fund_a_csv), "nav_type": "total_return"},
+                    {"name": "Fund B", "source": "csv", "file": str(fund_b_csv), "nav_type": "total_return"},
+                    {"name": "Fund C", "source": "csv", "file": str(fund_c_csv), "nav_type": "total_return"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object] = {}
+
+    def capture_render_tables(absolute_rows, relative_rows, as_of_date):
+        captured["absolute_rows"] = absolute_rows
+        captured["as_of_date"] = as_of_date
+
+    monkeypatch.setattr(main, "render_tables", capture_render_tables)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["main.py", "--config", str(config_path), "--report-date", "2024-04-03", "--no-cache"],
+    )
+
+    assert main.main() == 0
+    assert captured["as_of_date"] == pd.Timestamp("2024-04-03")
+    fund_a = next(row for row in captured["absolute_rows"] if row["Fund"] == "Fund A")
+    assert fund_a["latest_date"] == pd.Timestamp("2024-04-02")
+    assert fund_a["stale_days"] == 1
+
+
+def test_as_of_and_report_date_are_mutually_exclusive(monkeypatch):
+    monkeypatch.setattr(
+        "sys.argv",
+        ["main.py", "--as-of", "2024-04-03", "--report-date", "2024-04-03"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main.main()
+
+    assert "Use either --as-of or --report-date" in str(exc_info.value)
+
+
 def test_report_rows_ranked_by_mtd_descending(tmp_path, monkeypatch):
     benchmark_csv = tmp_path / "benchmark.csv"
     benchmark_csv.write_text("date,nav\n2024-04-01,100\n2024-04-03,100\n", encoding="utf-8")

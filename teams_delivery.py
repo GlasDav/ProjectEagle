@@ -16,7 +16,6 @@ LEGACY_TOP_MARKER = "\N{LARGE GREEN CIRCLE}"
 LEGACY_BOTTOM_MARKER = "\N{LARGE RED CIRCLE}"
 LEGACY_HIGHLIGHT_LEGEND = "Green circles mark best performers; red circles mark worst performers."
 MAX_TEAMS_CARD_BYTES = 24_000
-ADAPTIVE_MAIN_TABLE_SPLIT_ROW_THRESHOLD = 23
 DEFAULT_TEAMS_POST_DELAY_SECONDS = 1.0
 
 
@@ -368,6 +367,77 @@ def _build_adaptive_table(
     return {"type": "Container", "items": items}
 
 
+def _build_compact_adaptive_table(
+    rows_source: list[dict],
+    *,
+    top_n: int = 3,
+    bottom_n: int = 3,
+    include_benchmark_highlight: bool = False,
+) -> dict[str, Any]:
+    highlights = build_period_highlights(
+        rows_source,
+        periods=PERIODS,
+        top_n=top_n,
+        bottom_n=bottom_n,
+        include_benchmark=include_benchmark_highlight,
+    )
+    items: list[dict[str, Any]] = [
+        _text_block(LEGACY_HIGHLIGHT_LEGEND, color="Accent"),
+        _adaptive_table_row(
+            [
+                _adaptive_table_column([_text_block("Fund [Style]", weight="Bolder")], width="stretch"),
+                _adaptive_table_column(
+                    [_text_block("MTD | 3M | 6M | 12M | 3Y p.a. | 5Y p.a.", weight="Bolder", horizontal_alignment="Right")],
+                    width="auto",
+                ),
+            ]
+        ),
+    ]
+
+    if not rows_source:
+        items.append(_text_block("No rows are available for this table.", color="Accent"))
+        return {"type": "Container", "items": items}
+
+    for row_index, row in enumerate(rows_source):
+        label = _format_fund_label(row)
+        style = str(row.get("Style") or "").strip()
+        if style:
+            label = f"{label} [{style}]"
+        metric_text = " | ".join(
+            _format_highlighted_percent(
+                None if row.get("error") else row.get(period),
+                highlights.get((row_index, period)),
+            )
+            if not row.get("error")
+            else "Error"
+            for period in PERIODS
+        )
+        items.append(
+            _adaptive_table_row(
+                [
+                    _adaptive_table_column(
+                        [
+                            _text_block(
+                                label,
+                                weight="Bolder"
+                                if row.get("is_benchmark") or row.get("is_average") or _is_firetrail(row)
+                                else None,
+                            )
+                        ],
+                        width="stretch",
+                    ),
+                    _adaptive_table_column(
+                        [_text_block(metric_text, horizontal_alignment="Right", wrap=True)],
+                        width="auto",
+                    ),
+                ],
+                separator=True,
+            )
+        )
+
+    return {"type": "Container", "items": items}
+
+
 def _payload_size(payload: dict[str, Any]) -> int:
     return len(json.dumps(payload, separators=(",", ":"), default=str).encode("utf-8"))
 
@@ -391,18 +461,6 @@ def _split_rows_for_size(rows: list[dict], build_payload) -> list[dict[str, Any]
 
     chunk_count = len(chunks)
     return [build_payload(chunk_rows, index, chunk_count) for index, chunk_rows in enumerate(chunks, start=1)]
-
-
-
-def _split_rows_for_fixed_card_count(rows: list[dict], card_count: int = 2) -> list[list[dict]]:
-    if not rows:
-        return [[]]
-    if card_count <= 1 or len(rows) <= 1:
-        return [rows]
-
-    chunk_size = (len(rows) + card_count - 1) // card_count
-    return [rows[index : index + chunk_size] for index in range(0, len(rows), chunk_size)]
-
 
 def _adaptive_message_payload(body: list[dict[str, Any]], summary: str) -> dict[str, Any]:
     return {
@@ -437,22 +495,31 @@ def _build_adaptive_table_cards(
     include_benchmark_highlight: bool = False,
     split_large_table: bool = False,
 ) -> list[dict[str, Any]]:
-    row_chunks = (
-        _split_rows_for_fixed_card_count(rows)
-        if split_large_table and len(rows) > ADAPTIVE_MAIN_TABLE_SPLIT_ROW_THRESHOLD
-        else [rows]
-    )
-    chunk_count = len(row_chunks)
-    payloads: list[dict[str, Any]] = []
-    for index, chunk_rows in enumerate(row_chunks, start=1):
+    def build_payload(chunk_rows: list[dict], index: int, chunk_count: int, *, compact: bool = False) -> dict[str, Any]:
         table_title = _table_title(title, index, chunk_count)
         body = [
             _text_block(table_title, weight="Bolder", size="Medium"),
             _text_block(description),
-            _build_adaptive_table(chunk_rows, include_benchmark_highlight=include_benchmark_highlight),
+            (
+                _build_compact_adaptive_table(chunk_rows, include_benchmark_highlight=include_benchmark_highlight)
+                if compact
+                else _build_adaptive_table(chunk_rows, include_benchmark_highlight=include_benchmark_highlight)
+            ),
         ]
-        payloads.append(_adaptive_message_payload(body, summary))
-    return payloads
+        return _adaptive_message_payload(body, summary)
+
+    regular_payload = build_payload(rows, 1, 1)
+    if not split_large_table or _payload_size(regular_payload) <= MAX_TEAMS_CARD_BYTES:
+        return [regular_payload]
+
+    compact_payload = build_payload(rows, 1, 1, compact=True)
+    if _payload_size(compact_payload) <= MAX_TEAMS_CARD_BYTES:
+        return [compact_payload]
+
+    return _split_rows_for_size(
+        rows,
+        lambda chunk_rows, index, chunk_count: build_payload(chunk_rows, index, chunk_count, compact=True),
+    )
 
 
 def _build_adaptive_scorecard_card(body: list[dict[str, Any]], summary: str) -> dict[str, Any]:

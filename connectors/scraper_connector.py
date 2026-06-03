@@ -315,6 +315,14 @@ def _merge_prices_and_distributions(
     merged["date"] = pd.to_datetime(merged["date"], errors="coerce")
     if hasattr(merged["date"].dt, "tz") and merged["date"].dt.tz is not None:
         merged["date"] = merged["date"].dt.tz_convert(None)
+    merged["nav"] = pd.to_numeric(merged["nav"], errors="coerce")
+    merged["_source_order"] = range(len(merged))
+    merged = (
+        merged.dropna(subset=["date", "nav"])
+        .sort_values(["date", "_source_order"], kind="mergesort")
+        .groupby("date", as_index=False)
+        .agg({"nav": "last"})
+    )
     merged["distribution"] = 0.0
     if not distribution_frame.empty:
         distribution_frame = distribution_frame.copy()

@@ -239,6 +239,19 @@ def test_build_html_report_appends_competitor_set_tables_without_commentary():
     assert "No durable public historical unit price" in html
 
 
+def test_build_html_report_adds_print_page_groups():
+    absolute_rows, relative_rows = _sample_rows()
+
+    html = build_html_report(absolute_rows, relative_rows, pd.Timestamp("2026-03-29"), competitor_sets=_competitor_sets())
+
+    assert "@media print" in html
+    assert "@page" in html
+    assert 'class="print-page scorecard-page"' in html
+    assert 'class="table-card print-page absolute-page"' in html
+    assert 'class="table-card print-page relative-page"' in html
+    assert 'class="print-page competitor-page last-print-page"' in html
+
+
 def test_build_plaintext_report_uses_threshold_aware_stale_count():
     absolute_rows, relative_rows = _sample_rows()
     absolute_rows[1]["latest_date"] = pd.Timestamp("2026-03-20")

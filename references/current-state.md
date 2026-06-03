@@ -39,6 +39,13 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - The benchmark row is pinned to the top of that Teams table, and the default lineup excludes the four comparison funds that duplicated broad index coverage.
 - Forager Australian Value and Perpetual Pure Value are disabled in the default lineup so the main Teams relative table can post as one Adaptive Card within the workflow payload limit.
 - Adaptive Teams table rows now omit redundant spacing/alignment metadata to keep the default main table compact, while very large ad hoc tables can still split.
+- Oversized Adaptive main tables now fall back to a compact two-column row layout before splitting, preserving every row, style, and period while avoiding the per-cell JSON overhead that can breach Teams workflow payload limits.
+
+### Exact report-date runs
+
+- `--as-of` remains an upper bound that lets the app choose the best-coverage report date.
+- `--report-date YYYY-MM-DD` pins calculations to the benchmark date on or before the requested date and skips the best-coverage date selector.
+- GitHub Actions manual runs expose an optional `report_date` input, using `--report-date` only when that input is provided.
 
 ### Distribution timing
 

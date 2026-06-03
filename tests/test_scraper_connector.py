@@ -107,6 +107,26 @@ def test_merge_prices_and_distributions_supports_next_price_date_timing():
     assert merged["distribution"].tolist() == [0.0, 10.0, 0.0]
 
 
+def test_merge_prices_and_distributions_does_not_duplicate_distribution_on_duplicate_price_dates():
+    prices = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2026-05-17", "2026-05-18", "2026-05-18", "2026-05-19"]),
+            "nav": [1.3656, 1.3541, 1.2429, 1.2351],
+        }
+    )
+    distributions = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2026-05-18"]),
+            "distribution": [0.1115747213],
+        }
+    )
+
+    merged = _merge_prices_and_distributions(prices, distributions, "2026-05-17", "2026-05-19")
+
+    assert merged.loc[pd.Timestamp("2026-05-18"), "nav"] == pytest.approx(1.2429)
+    assert merged.loc[pd.Timestamp("2026-05-18"), "distribution"] == pytest.approx(0.1115747213)
+
+
 def test_apply_configured_price_scaling_scales_rows_before_cutoff_only():
     prices = pd.DataFrame(
         {

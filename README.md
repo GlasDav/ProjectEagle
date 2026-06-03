@@ -2,7 +2,7 @@
 
 PerfSraper builds a total-return performance dashboard for a set of Australian equity funds and compares them with the S&P/ASX 200 Accumulation Index.
 
-By default, reports request data as of `T-2`. The final report date is then selected as the latest date available for the largest number of default-report funds, so the main table is anchored to the date where most managers have public NAV data rather than making every row look stale. Passing `--as-of` sets the upper bound for that selection.
+By default, reports request data as of `T-2`. The final report date is then selected as the latest date available for the largest number of default-report funds, so the main table is anchored to the date where most managers have public NAV data rather than making every row look stale. Passing `--as-of` sets the upper bound for that selection. Passing `--report-date` pins the report to the benchmark date on or before that date and skips the best-coverage selection.
 
 The rendered terminal, HTML, Excel, and Teams tables now include a `Style` column so you can scan `Value`, `Growth`, and `Agnostic` managers without changing any ranking or return calculations.
 
@@ -53,6 +53,7 @@ py main.py --no-cache --fund "Firetrail"
 py main.py --no-cache --fund "Fidelity"
 py main.py --no-cache --fund "Airlie"
 py main.py --no-cache --fund "Solaris"
+py main.py --no-cache --report-date 2026-05-29
 py main.py --no-cache --export xlsx
 py main.py --no-cache --export html
 py main.py --no-cache --export all
@@ -119,7 +120,7 @@ Before it can run, add this GitHub Actions secret in your repository:
 
 - `PROJECTEAGLE_TEAMS_WEBHOOK_URL`
 
-After that, the workflow can be run manually from the Actions tab or on its daily schedule.
+After that, the workflow can be run manually from the Actions tab or on its daily schedule. Manual runs can optionally provide an exact `report_date`; scheduled runs still use `T-2` as the upper bound and let the app choose the best-coverage report date.
 
 ## Useful Files
 

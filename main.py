@@ -45,6 +45,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fund total-return performance dashboard")
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--as-of", dest="as_of", help="Reference date for calculations (YYYY-MM-DD)")
+    parser.add_argument(
+        "--report-date",
+        help="Pin calculations to the benchmark date on or before this date (YYYY-MM-DD), without best-coverage date selection.",
+    )
     parser.add_argument("--export", choices=["xlsx", "html", "all"], help="Export the report to Excel, HTML, or both")
     parser.add_argument("--output-dir", default=".", help="Directory for exported report files")
     parser.add_argument("--no-cache", action="store_true", help="Force refresh all data")
@@ -474,6 +478,9 @@ def main() -> int:
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
+    if args.as_of and args.report_date:
+        raise SystemExit("Use either --as-of or --report-date, not both.")
+
     config_path = Path(args.config).resolve()
     config = load_config(config_path)
     base_path = config_path.parent
@@ -497,7 +504,7 @@ def main() -> int:
         if not fund_configs:
             raise SystemExit(f"No fund names matched '{args.fund}'.")
 
-    requested_as_of = resolve_requested_as_of_date(args.as_of)
+    requested_as_of = resolve_requested_as_of_date(args.report_date or args.as_of)
     start_date = (requested_as_of - pd.DateOffset(years=5, months=1)).strftime("%Y-%m-%d")
 
     benchmark_frame = fetch_data(
@@ -527,8 +534,13 @@ def main() -> int:
             LOGGER.warning("Failed to fetch %s while selecting report date: %s", fund_config["name"], exc)
             fund_frames[str(fund_config["name"])] = pd.DataFrame(columns=["nav", "distribution"])
 
-    as_of_date = select_report_as_of_date(fund_configs, fund_frames, benchmark_as_of)
-    if as_of_date != benchmark_as_of:
+    if args.report_date:
+        as_of_date = benchmark_as_of
+        if as_of_date != requested_as_of:
+            LOGGER.info("Using %s as report date because it is the nearest benchmark date on or before %s.", as_of_date.date(), requested_as_of.date())
+    else:
+        as_of_date = select_report_as_of_date(fund_configs, fund_frames, benchmark_as_of)
+    if not args.report_date and as_of_date != benchmark_as_of:
         LOGGER.info("Using %s as report date because it is the latest date available for the most funds.", as_of_date.date())
 
     benchmark_returns = calculate_returns(benchmark_tri, as_of_date)
