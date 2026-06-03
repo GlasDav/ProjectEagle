@@ -38,7 +38,8 @@ def build_total_return_index(fund_data: pd.DataFrame, nav_type: str) -> pd.Serie
     raw_distributions = pd.to_numeric(frame.get("distribution", pd.Series(index=frame.index, dtype=float)), errors="coerce")
     distributions = raw_distributions.reindex(frame.index, fill_value=0.0).fillna(0.0)
 
-    if not had_distribution_column or raw_distributions.dropna().empty:
+    has_nonzero_distribution = not raw_distributions.dropna().empty and (distributions != 0).any()
+    if not had_distribution_column or not has_nonzero_distribution:
         LOGGER.warning("No usable distribution data found for ex_distribution series. Falling back to price-only returns.")
 
     returns = frame["nav"] / frame["nav"].shift(1) - 1

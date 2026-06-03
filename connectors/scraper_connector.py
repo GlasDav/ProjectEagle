@@ -525,20 +525,13 @@ def _align_distributions_to_next_price_date(
     for row in distributions.itertuples(index=False):
         distribution_date = pd.Timestamp(row.date)
         insert_at = price_dates.searchsorted(distribution_date, side="right")
-        aligned_date = distribution_date
 
         if insert_at < len(price_dates):
             candidate = price_dates[insert_at]
             if candidate - distribution_date <= max_gap:
-                aligned_date = candidate
-        elif len(price_dates):
-            previous = price_dates[-1]
-            if distribution_date - previous <= max_gap:
-                aligned_date = previous
+                aligned_rows.append({"date": candidate, "distribution": row.distribution})
 
-        aligned_rows.append({"date": aligned_date, "distribution": row.distribution})
-
-    return pd.DataFrame(aligned_rows)
+    return pd.DataFrame(aligned_rows, columns=["date", "distribution"])
 
 
 def _build_airlie_price_and_distribution_frames(

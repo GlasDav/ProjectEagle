@@ -82,6 +82,25 @@ def test_align_distributions_to_next_price_date_prefers_next_trading_day():
     assert aligned["distribution"].tolist() == [0.019491, 0.004967]
 
 
+def test_align_distributions_to_next_price_date_does_not_align_backward_when_future_price_missing():
+    prices = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2025-06-27", "2025-06-30"]),
+            "nav": [100.0, 101.0],
+        }
+    )
+    distributions = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2025-06-30"]),
+            "distribution": [10.0],
+        }
+    )
+
+    aligned = _align_distributions_to_next_price_date(prices, distributions)
+
+    assert aligned.empty
+
+
 def test_merge_prices_and_distributions_supports_next_price_date_timing():
     prices = pd.DataFrame(
         {
@@ -105,6 +124,31 @@ def test_merge_prices_and_distributions_supports_next_price_date_timing():
     )
 
     assert merged["distribution"].tolist() == [0.0, 10.0, 0.0]
+
+
+def test_merge_prices_and_distributions_drops_unalignable_next_price_date_distribution():
+    prices = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2025-06-27", "2025-06-30"]),
+            "nav": [100.0, 101.0],
+        }
+    )
+    distributions = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2025-06-30"]),
+            "distribution": [10.0],
+        }
+    )
+
+    merged = _merge_prices_and_distributions(
+        prices,
+        distributions,
+        "2025-06-27",
+        "2025-06-30",
+        distribution_timing="next_price_date",
+    )
+
+    assert merged["distribution"].tolist() == [0.0, 0.0]
 
 
 def test_merge_prices_and_distributions_does_not_duplicate_distribution_on_duplicate_price_dates():

@@ -60,3 +60,14 @@ def test_build_total_return_index_logs_fallback_when_distribution_missing(caplog
 
     assert "Falling back to price-only returns" in caplog.text
     assert tri.iloc[-1] == 95.0
+
+
+def test_build_total_return_index_logs_fallback_when_distribution_column_all_zero(caplog):
+    index = pd.to_datetime(["2024-01-01", "2024-01-02"])
+    frame = pd.DataFrame({"nav": [10.0, 9.5], "distribution": [0.0, 0.0]}, index=index)
+
+    with caplog.at_level(logging.WARNING):
+        tri = build_total_return_index(frame, "ex_distribution")
+
+    assert "Falling back to price-only returns" in caplog.text
+    assert tri.iloc[-1] == 95.0

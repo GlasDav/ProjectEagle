@@ -17,6 +17,12 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 ## Recent Fixes
 
+### Distribution alignment guardrails
+
+- `next_price_date` distribution sources no longer align a distribution backward to the last available price row when the next ex-price row has not arrived yet.
+- This prevents quarter-end cum-price rows from receiving the distribution one row too early and overstating short-period total returns.
+- `ex_distribution` TRI construction now logs the price-only fallback warning when a distribution column is present but all distribution values are zero, closing a silent fallback path created by zero-filled scraper merge outputs.
+
 ### Highlight display and Lazard long-period coverage
 
 - Best/worst highlights now exclude the benchmark/index row and average rows. Tables with fewer than five eligible funds highlight one best and one worst result per period, tables with five to nine eligible funds highlight two of each, and larger tables keep three of each.
