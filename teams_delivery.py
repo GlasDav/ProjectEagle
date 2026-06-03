@@ -93,7 +93,9 @@ def _text_block(
     horizontal_alignment: str | None = None,
     spacing: str | None = None,
 ) -> dict[str, Any]:
-    block: dict[str, Any] = {"type": "TextBlock", "text": text, "wrap": wrap}
+    block: dict[str, Any] = {"type": "TextBlock", "text": text}
+    if wrap:
+        block["wrap"] = True
     if weight:
         block["weight"] = weight
     if size:
@@ -363,7 +365,7 @@ def _build_adaptive_table(
         cells = [
             _adaptive_table_column([label_block], width=column_widths[0]),
             _adaptive_table_column(
-                [_text_block(str(row.get("Style") or ""), horizontal_alignment="Right", wrap=False)],
+                [_text_block(str(row.get("Style") or ""), wrap=False)],
                 width=column_widths[1],
             ),
         ]
@@ -374,8 +376,7 @@ def _build_adaptive_table(
                 error=row.get("error", False),
                 highlight=highlight,
             )
-            value_block["horizontalAlignment"] = "Right"
-            value_block["wrap"] = False
+            value_block.pop("wrap", None)
             cells.append(_adaptive_table_column([value_block], width=column_widths[len(cells)]))
         items.append(_adaptive_table_row(cells, separator=True))
 
@@ -569,10 +570,6 @@ def _build_adaptive_table_cards(
     if not split_large_table or _payload_size(regular_payload) <= MAX_TEAMS_CARD_BYTES:
         return [regular_payload]
 
-    compact_payload = build_payload(rows, 1, 1, compact=True)
-    if _payload_size(compact_payload) <= MAX_TEAMS_CARD_BYTES:
-        return [compact_payload]
-
     regular_chunks = _split_rows_for_size_with_offsets(
         rows,
         lambda chunk_rows, index, chunk_count, row_offset: build_payload(
@@ -584,6 +581,10 @@ def _build_adaptive_table_cards(
     )
     if all(_payload_size(payload) <= MAX_TEAMS_CARD_BYTES for payload in regular_chunks):
         return regular_chunks
+
+    compact_payload = build_payload(rows, 1, 1, compact=True)
+    if _payload_size(compact_payload) <= MAX_TEAMS_CARD_BYTES:
+        return [compact_payload]
 
     return _split_rows_for_size_with_offsets(
         rows,

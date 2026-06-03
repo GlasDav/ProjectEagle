@@ -352,7 +352,7 @@ def test_teams_payloads_include_relative_and_peer_tables_without_absolute_table(
     assert "Benchmark row shows absolute benchmark total returns" not in relative_section["text"]
 
 
-def test_adaptive_default_sized_main_table_compacts_before_splitting():
+def test_adaptive_default_sized_main_table_keeps_regular_layout_under_safety_cap():
     absolute_rows, _ = _sample_rows()
     relative_rows = _ranked_rows(23)
 
@@ -369,13 +369,15 @@ def test_adaptive_default_sized_main_table_compacts_before_splitting():
 
     assert len(payloads) == 2
     assert all(_payload_size(payload) <= MAX_TEAMS_CARD_BYTES for payload in table_payloads)
-    assert table_rows[0][0]["columns"][0]["items"][0]["text"] == "Fund [Style]"
+    assert table_rows[0][0]["columns"][0]["items"][0]["text"] == "Fund"
+    assert table_rows[0][0]["columns"][1]["items"][0]["text"] == "Style"
     assert sum(len(rows) - 1 for rows in table_rows) == 23
-    assert table_rows[0][1]["columns"][0]["items"][0]["text"] == "Fund 1 [Growth]"
-    assert table_rows[-1][-1]["columns"][0]["items"][0]["text"] == "Fund 23 [Growth]"
-    assert "Fund [Style]" in payload_json
-    assert "\N{LARGE GREEN CIRCLE}" in payload_json
-    assert "\N{LARGE RED CIRCLE}" in payload_json
+    assert table_rows[0][1]["columns"][0]["items"][0]["text"] == "Fund 1"
+    assert table_rows[0][1]["columns"][1]["items"][0]["text"] == "Growth"
+    assert table_rows[-1][-1]["columns"][0]["items"][0]["text"] == "Fund 23"
+    assert "Fund [Style]" not in payload_json
+    assert '"color": "Good"' in payload_json
+    assert '"color": "Attention"' in payload_json
 
 
 def test_adaptive_main_table_splits_regular_tables_when_compact_table_is_too_large():
@@ -389,7 +391,7 @@ def test_adaptive_main_table_splits_regular_tables_when_compact_table_is_too_lar
         webhook_url="https://example.com/webhook",
     )
 
-    assert len(payloads) == 5
+    assert len(payloads) == 4
     table_payloads = payloads[1:]
     tables = [payload["attachments"][0]["content"]["body"][-1] for payload in table_payloads]
     table_rows = [_adaptive_table_rows(table) for table in tables]
@@ -422,8 +424,8 @@ def test_adaptive_main_table_splits_regular_tables_when_compact_table_is_too_lar
         for block in payload["attachments"][0]["content"]["body"]
         if block.get("type") == "TextBlock"
     ]
-    assert "Relative performance table (1/4)" in titles
-    assert "Relative performance table (4/4)" in titles
+    assert "Relative performance table (1/3)" in titles
+    assert "Relative performance table (3/3)" in titles
 
 
 def test_adaptive_split_cards_only_include_scorecard_intro_once():
@@ -439,10 +441,10 @@ def test_adaptive_split_cards_only_include_scorecard_intro_once():
 
     bodies = [payload["attachments"][0]["content"]["body"] for payload in payloads]
 
-    assert len(payloads) == 5
+    assert len(payloads) == 4
     assert bodies[0][0]["text"] == "Australian Equity Fund Scorecard | 2026-03-29"
-    assert bodies[1][0]["text"] == "Relative performance table (1/4)"
-    assert bodies[-1][0]["text"] == "Relative performance table (4/4)"
+    assert bodies[1][0]["text"] == "Relative performance table (1/3)"
+    assert bodies[-1][0]["text"] == "Relative performance table (3/3)"
     assert sum(
         1
         for body in bodies
