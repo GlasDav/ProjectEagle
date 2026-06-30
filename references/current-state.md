@@ -39,7 +39,8 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 
 ### GitHub Actions schedule reliability
 
-- The daily Teams workflow now uses 10:37 Australia/Sydney-equivalent UTC cron entries and gates on the triggering cron plus Sydney UTC offset.
+- The Teams workflow now runs on Sydney weekdays at 10:37 using paired UTC cron entries and gates on the triggering cron plus Sydney UTC offset.
+- During daylight saving, Sydney weekdays map to Sunday-Thursday UTC; during standard time, they map to Monday-Friday UTC.
 - This avoids silently skipping the real scheduled send when GitHub starts a scheduled runner late.
 
 ### Benchmark-relative Teams delivery

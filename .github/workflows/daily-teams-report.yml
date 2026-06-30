@@ -8,10 +8,11 @@ on:
         required: false
         type: string
   schedule:
-    # 10:37 Australia/Sydney during daylight saving time.
-    - cron: "37 23 * * *"
-    # 10:37 Australia/Sydney during standard time.
-    - cron: "37 0 * * *"
+    # 10:37 Australia/Sydney weekdays during daylight saving time.
+    # This is 23:37 UTC on the previous UTC day, so Sydney Mon-Fri is UTC Sun-Thu.
+    - cron: "37 23 * * 0-4"
+    # 10:37 Australia/Sydney weekdays during standard time.
+    - cron: "37 0 * * 1-5"
 
 jobs:
   send-report:
@@ -45,9 +46,9 @@ jobs:
             REPORT_DATE="$DISPATCH_REPORT_DATE"
             REPORT_DATE_OPTION="--report-date"
           fi
-          EXPECTED_SCHEDULE="37 0 * * *"
+          EXPECTED_SCHEDULE="37 0 * * 1-5"
           if [ "$SYDNEY_OFFSET" = "+1100" ]; then
-            EXPECTED_SCHEDULE="37 23 * * *"
+            EXPECTED_SCHEDULE="37 23 * * 0-4"
           fi
 
           echo "sydney_offset=$SYDNEY_OFFSET" >> "$GITHUB_OUTPUT"

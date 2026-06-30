@@ -114,13 +114,14 @@ What it does:
 - posts the Teams summary card from GitHub instead of your PC
 - uploads the generated HTML report as a workflow artifact
 - calculates the report as of `T-2` in `Australia/Sydney`
-- handles Sydney daylight saving with paired UTC cron entries and the triggering cron string, so delayed runner starts do not skip the real daily send
+- runs on Sydney weekdays only, using paired UTC cron entries for daylight saving and standard time
+- gates on the triggering cron string, so delayed runner starts do not skip the real weekday send
 
 Before it can run, add this GitHub Actions secret in your repository:
 
 - `PROJECTEAGLE_TEAMS_WEBHOOK_URL`
 
-After that, the workflow can be run manually from the Actions tab or on its daily schedule. Manual runs can optionally provide an exact `report_date`; scheduled runs still use `T-2` as the upper bound and let the app choose the best-coverage report date.
+After that, the workflow can be run manually from the Actions tab or on its weekday schedule. Manual runs can optionally provide an exact `report_date`; scheduled runs still use `T-2` as the upper bound and let the app choose the best-coverage report date.
 
 ## Useful Files
 
