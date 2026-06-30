@@ -618,6 +618,157 @@ def _build_solaris_price_and_distribution_frames(
     return prices, distributions.loc[:, ["date", "distribution"]]
 
 
+def _parse_percent_value(value: object) -> float | None:
+    text = str(value or "").replace("%", "").replace(",", "").strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _extract_solaris_annualized_net_performance(performance_table: pd.DataFrame) -> dict[int, float]:
+    if performance_table is None or performance_table.empty:
+        return {}
+
+    as_of_column = next(
+        (
+            column
+            for column in performance_table.columns
+            if _normalize_column_name(column).casefold().startswith("as at ")
+        ),
+        performance_table.columns[0],
+    )
+    label_series = performance_table[as_of_column].astype(str).str.casefold()
+    matches = performance_table[label_series.str.contains("portfolio return", na=False)]
+    if matches.empty:
+        return {}
+
+    row = matches.iloc[0]
+    period_columns = {
+        years: next(
+            (
+                column
+                for column in performance_table.columns
+                if _normalize_column_name(column).casefold() == label
+            ),
+            None,
+        )
+        for years, label in {
+            1: "1 year",
+            3: "3 years p.a.",
+            5: "5 years p.a.",
+        }.items()
+    }
+
+    values: dict[int, float] = {}
+    for years, column in period_columns.items():
+        if column is None:
+            continue
+        parsed = _parse_percent_value(row[column])
+        if parsed is not None:
+            values[years] = parsed
+    return values
+
+
+def _extract_solaris_annualized_performance_as_of(performance_table: pd.DataFrame) -> pd.Timestamp | None:
+    if performance_table is None or performance_table.empty:
+        return None
+    for column in performance_table.columns:
+        normalized = _normalize_column_name(column)
+        if normalized.casefold().startswith("as at "):
+            timestamp = pd.to_datetime(normalized[6:], errors="coerce", dayfirst=True)
+            if not pd.isna(timestamp):
+                return pd.Timestamp(timestamp).normalize()
+    return None
+
+
+def _build_total_return_series_from_history(frame: pd.DataFrame) -> pd.Series:
+    nav = pd.to_numeric(frame["nav"], errors="coerce")
+    distributions = pd.to_numeric(
+        frame.get("distribution", pd.Series(index=frame.index, dtype=float)),
+        errors="coerce",
+    ).fillna(0.0)
+    returns = nav / nav.shift(1) - 1
+    distribution_mask = distributions != 0
+    returns.loc[distribution_mask] = (nav.loc[distribution_mask] + distributions.loc[distribution_mask]) / nav.shift(1).loc[
+        distribution_mask
+    ] - 1
+    returns.iloc[0] = 0.0
+    return (1 + returns.fillna(0.0)).cumprod() * 100.0
+
+
+def _extend_solaris_history_with_performance_anchors(
+    history: pd.DataFrame,
+    performance_table: pd.DataFrame,
+    end_date: str,
+    *,
+    max_anchor_gap_days: int = 10,
+) -> pd.DataFrame:
+    if history.empty or "nav" not in history.columns:
+        return history
+
+    performance = _extract_solaris_annualized_net_performance(performance_table)
+    if not performance:
+        return history
+
+    frame = history.copy().sort_index()
+    frame.index = pd.to_datetime(frame.index, errors="coerce").normalize()
+    frame = frame[~frame.index.isna()]
+    if frame.empty:
+        return history
+    if "distribution" not in frame.columns:
+        frame["distribution"] = 0.0
+
+    end = pd.Timestamp(end_date).normalize()
+    eligible_dates = frame.index[frame.index <= end]
+    if len(eligible_dates) == 0:
+        return history
+
+    end_timestamp = eligible_dates[-1]
+    performance_as_of = _extract_solaris_annualized_performance_as_of(performance_table)
+    performance_base_timestamp = end_timestamp
+    if performance_as_of is not None and performance_as_of <= end_timestamp:
+        performance_dates = frame.index[frame.index <= performance_as_of]
+        if len(performance_dates) > 0:
+            performance_base_timestamp = performance_dates[-1]
+
+    first_timestamp = frame.index[0]
+    first_nav = float(frame.loc[first_timestamp, "nav"])
+    if first_nav <= 0:
+        return history
+
+    tri = _build_total_return_series_from_history(frame.loc[:end_timestamp])
+    performance_base_growth = float(tri.loc[performance_base_timestamp]) / 100.0
+    max_anchor_gap = pd.Timedelta(days=max_anchor_gap_days)
+    anchor_rows: list[dict[str, object]] = []
+    for years in sorted(performance, reverse=True):
+        anchor_date = end_timestamp - pd.DateOffset(years=years)
+        previous_dates = frame.index[frame.index <= anchor_date]
+        if len(previous_dates) > 0 and anchor_date - previous_dates[-1] <= max_anchor_gap:
+            continue
+
+        annualized_return = performance[years] / 100.0
+        total_return = (1 + annualized_return) ** years
+        if total_return <= 0:
+            continue
+
+        anchor_rows.append(
+            {
+                "date": anchor_date,
+                "nav": first_nav * performance_base_growth / total_return,
+                "distribution": 0.0,
+            }
+        )
+
+    if not anchor_rows:
+        return history
+
+    anchors = pd.DataFrame(anchor_rows).set_index("date")
+    return pd.concat([anchors, frame]).sort_index()
+
+
 def _build_pendal_history_url(
     product_id: str,
     start_date: str,
@@ -1376,7 +1527,7 @@ def _build_chester_price_and_distribution_frames(
         raise ConnectorValidationError("Chester unit price history is missing required columns.")
 
     frame = history_frame.copy()
-    frame["date"] = frame["PriceDt"].map(_parse_chester_sheet_date)
+    frame["date"] = frame["PriceDt"].map(_parse_chester_sheet_date).dt.normalize()
     frame = frame.dropna(subset=["date"])
     frame["nav"] = _to_float(frame[price_field])
     frame["distribution"] = _to_float(frame.get("Dist", pd.Series(index=frame.index, dtype="object")))
@@ -1843,6 +1994,14 @@ def scrape_solaris_wpdatatable(
         raise ConnectorValidationError("solaris_wpdatatable scraper requires 'url'.")
 
     response = _get_with_retry(session, url, timeout=20)
+    try:
+        performance_table = _extract_wpdatatable_rows(
+            response.text,
+            fund_config.get("performance_table_desc_id", "table_1_desc"),
+        )
+    except ConnectorValidationError as exc:
+        LOGGER.warning("Solaris performance table unavailable; long-period anchors will be skipped: %s", exc)
+        performance_table = pd.DataFrame()
     price_table = _extract_wpdatatable_rows(response.text, fund_config.get("price_table_desc_id", "table_2_desc"))
     distribution_table = _extract_wpdatatable_rows(
         response.text,
@@ -1856,7 +2015,11 @@ def scrape_solaris_wpdatatable(
         fund_config.get("ex_price_field", "Ex Exit Price"),
         fund_config.get("distribution_field", "Cash Portion"),
     )
-    return _merge_prices_and_distributions(prices, distributions, start_date, end_date)
+    history = _merge_prices_and_distributions(prices, distributions, start_date, end_date)
+    history = _extend_solaris_history_with_performance_anchors(history, performance_table, end_date)
+    start = pd.Timestamp(start_date)
+    end = pd.Timestamp(end_date)
+    return history.loc[(history.index >= start) & (history.index <= end)]
 
 
 @register_scraper("example_manager")

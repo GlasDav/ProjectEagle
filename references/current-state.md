@@ -22,6 +22,9 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - `next_price_date` distribution sources no longer align a distribution backward to the last available price row when the next ex-price row has not arrived yet.
 - This prevents quarter-end cum-price rows from receiving the distribution one row too early and overstating short-period total returns.
 - `ex_distribution` TRI construction now logs the price-only fallback warning when a distribution column is present but all distribution values are zero, closing a silent fallback path created by zero-filled scraper merge outputs.
+- Chester distribution dates are normalized to calendar days before choosing the price row, so same-day timestamped cum rows no longer override ex-distribution rows while the distribution is still reinvested.
+- Solaris' public unit-price table has sparse history before September 2025 and only exposes the latest distribution row. The scraper now uses Solaris' published net performance table to add 1Y, 3Y, and 5Y calibration anchors while still reinvesting explicit distribution rows from the distribution table.
+- Period returns no longer use a start row more than 45 days before the intended period anchor. This preserves monthly source compatibility while preventing sparse historical tables from producing stale long-period returns.
 
 ### Highlight display and Lazard long-period coverage
 
@@ -84,7 +87,7 @@ This file is the quick onboarding reference for the live PerfSraper configuratio
 - Smallco Broadcap now reads the public Smallco monthly history tables and reconstructs ex-distribution month-end rows from the paired pre and post distribution entries.
 - Chester High Conviction Fund now reads Chester's public Google Sheet and preserves the ex-price row on distribution dates instead of the same-day `CUM` row.
 - Hyperion Australian Growth Companies Fund now combines Hyperion's public daily price CSV with distribution breakdown workbooks discovered via the public media API.
-- Solaris Core Australian Equity Fund now reads Solaris' public website tables for unit prices and distributions. The publicly reachable history currently begins on `2021-10-18`, so 5Y output can remain `N/A` until Solaris publishes a longer series.
+- Solaris Core Australian Equity Fund now reads Solaris' public website tables for unit prices and distributions, plus the published net performance table for sparse-history 1Y, 3Y, and 5Y calibration anchors.
 - Allan Gray Australia Equity Fund has a scraper path combining Equity Trustees prices and Allan Gray fact sheet data, but is disabled because current public data does not provide daily MTD coverage.
 
 ### Style metadata

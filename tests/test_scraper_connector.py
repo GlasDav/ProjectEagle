@@ -15,7 +15,10 @@ from connectors.scraper_connector import (
     _build_macquarie_history_url,
     _parse_lazard_annual_distribution_pdf_text,
     _parse_dnr_distribution_history_table,
+    _extend_solaris_history_with_performance_anchors,
     _extend_lazard_history_with_performance_anchors,
+    _extract_solaris_annualized_net_performance,
+    _extract_solaris_annualized_performance_as_of,
     _parse_lazard_historical_nav,
     _parse_lazard_legacy_distribution_pdf_text,
     _parse_macquarie_historical_price_csv,
@@ -44,6 +47,7 @@ from connectors.scraper_connector import (
     _parse_vanguard_distribution_history,
     _parse_vanguard_price_history,
 )
+from total_return import build_total_return_index
 
 
 def test_parse_perpetual_distribution_table_filters_summary_rows():
@@ -298,6 +302,49 @@ def test_build_solaris_price_and_distribution_frames_uses_ex_exit_price():
     assert distributions.to_dict(orient="records") == [
         {"date": pd.Timestamp("2025-12-31"), "distribution": pytest.approx(0.020852)}
     ]
+
+
+def test_extract_solaris_annualized_performance_reads_portfolio_row():
+    performance_table = pd.DataFrame(
+        {
+            "As at 31 May 2026": ["Portfolio Return (net)", "Benchmark Return #"],
+            "1 Year": ["9.29%", "6.89%"],
+            "3 Years p.a.": ["11.68%", "11.02%"],
+            "5 Years p.a.": ["8.53%", "8.10%"],
+        }
+    )
+
+    performance = _extract_solaris_annualized_net_performance(performance_table)
+
+    assert performance == {1: 9.29, 3: 11.68, 5: 8.53}
+    assert _extract_solaris_annualized_performance_as_of(performance_table) == pd.Timestamp("2026-05-31")
+
+
+def test_extend_solaris_history_with_performance_anchors_fills_sparse_long_period_targets():
+    history = pd.DataFrame(
+        {
+            "nav": [1.1225, 1.2479, 1.3439, 1.3437],
+            "distribution": [0.0, 0.0, 0.020852, 0.0],
+        },
+        index=pd.to_datetime(["2022-10-24", "2024-05-08", "2026-05-29", "2026-06-26"]),
+    )
+    performance_table = pd.DataFrame(
+        {
+            "As at 31 May 2026": ["Portfolio Return (net)"],
+            "1 Year": ["9.29%"],
+            "3 Years p.a.": ["11.68%"],
+            "5 Years p.a.": ["8.53%"],
+        }
+    )
+
+    extended = _extend_solaris_history_with_performance_anchors(history, performance_table, "2026-06-26")
+
+    assert pd.Timestamp("2023-06-26") in extended.index
+    assert pd.Timestamp("2021-06-26") in extended.index
+    assert pd.Timestamp("2025-06-26") in extended.index
+    tri = build_total_return_index(extended, "ex_distribution")
+    actual_tri = tri.loc[pd.Timestamp("2026-05-29")] / tri.loc[pd.Timestamp("2023-06-26")] - 1
+    assert actual_tri == pytest.approx((1 + 0.1168) ** 3 - 1)
 
 
 def test_parse_bennelong_history_sheet_uses_ex_distribution_redemption():
@@ -577,13 +624,15 @@ def test_build_chester_price_and_distribution_frames_prefers_ex_row_on_distribut
                 "28/06/2018 0:00:00",
                 "29/06/2018 0:00:00",
                 "29/06/2018 0:00:00",
+                "30/06/2025 0:00:00",
+                "30/06/2025 17:55:19",
                 "2018/2/7 12:00 AM",
             ],
-            "App": [1.314579, 1.284971, 1.318303, 1.280423],
-            "NAV": [1.310648, 1.281127, 1.314360, 1.276593],
-            "Red": [1.306716, 1.277284, 1.310417, 1.272764],
-            "Expr1": [None, None, "CUM", None],
-            "Dist": [None, 0.033247, None, None],
+            "App": [1.314579, 1.284971, 1.318303, 1.6414, 1.7797, 1.280423],
+            "NAV": [1.310648, 1.281127, 1.314360, 1.6365, 1.7744, 1.276593],
+            "Red": [1.306716, 1.277284, 1.310417, 1.6316, 1.7691, 1.272764],
+            "Expr1": [None, None, "CUM", None, None, None],
+            "Dist": [None, 0.033247, None, 0.1379, None, None],
         }
     )
 
@@ -593,9 +642,11 @@ def test_build_chester_price_and_distribution_frames_prefers_ex_row_on_distribut
         {"date": pd.Timestamp("2018-06-28"), "nav": 1.306716},
         {"date": pd.Timestamp("2018-06-29"), "nav": 1.277284},
         {"date": pd.Timestamp("2018-07-02"), "nav": 1.272764},
+        {"date": pd.Timestamp("2025-06-30"), "nav": 1.6316},
     ]
     assert distributions.to_dict(orient="records") == [
-        {"date": pd.Timestamp("2018-06-29"), "distribution": pytest.approx(0.033247)}
+        {"date": pd.Timestamp("2018-06-29"), "distribution": pytest.approx(0.033247)},
+        {"date": pd.Timestamp("2025-06-30"), "distribution": pytest.approx(0.1379)},
     ]
 
 

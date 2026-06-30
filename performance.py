@@ -5,6 +5,7 @@ from datetime import date
 import pandas as pd
 
 PERIODS = ("MTD", "3M", "6M", "12M", "3Y", "5Y")
+MAX_PERIOD_START_GAP_DAYS = 45
 
 
 def nearest_on_or_before(series: pd.Series, target_date: pd.Timestamp) -> pd.Timestamp | None:
@@ -41,8 +42,12 @@ def calculate_returns(total_return_index: pd.Series, as_of_date: date | pd.Times
 
     results: dict[str, float | None] = {}
     for period, target in targets.items():
-        start_date = nearest_on_or_before(series, pd.Timestamp(target))
+        target_timestamp = pd.Timestamp(target)
+        start_date = nearest_on_or_before(series, target_timestamp)
         if start_date is None or start_date == end_date:
+            results[period] = None
+            continue
+        if target_timestamp - start_date > pd.Timedelta(days=MAX_PERIOD_START_GAP_DAYS):
             results[period] = None
             continue
 

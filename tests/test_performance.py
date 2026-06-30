@@ -19,18 +19,19 @@ def test_calculate_returns_for_month_and_year_periods():
             "2021-03-31",
             "2022-09-30",
             "2023-04-30",
+            "2023-09-30",
             "2024-01-30",
             "2024-03-31",
             "2024-04-30",
         ]
     )
-    tri = pd.Series([80.0, 90.0, 95.0, 100.0, 110.0, 121.0, 133.1], index=index)
+    tri = pd.Series([80.0, 90.0, 95.0, 100.0, 105.0, 110.0, 121.0, 133.1], index=index)
 
     returns = calculate_returns(tri, pd.Timestamp("2024-04-30"))
 
     assert returns["MTD"] == pytest.approx(0.1)
     assert returns["3M"] == pytest.approx((133.1 / 110.0) - 1)
-    assert returns["6M"] == pytest.approx((133.1 / 100.0) - 1)
+    assert returns["6M"] == pytest.approx((133.1 / 105.0) - 1)
     assert returns["12M"] == pytest.approx((133.1 / 100.0) - 1)
     assert returns["3Y"] == pytest.approx((133.1 / 90.0) ** (365.25 / (pd.Timestamp("2024-04-30") - pd.Timestamp("2021-03-31")).days) - 1)
     assert returns["5Y"] == pytest.approx((133.1 / 80.0) ** (365.25 / (pd.Timestamp("2024-04-30") - pd.Timestamp("2019-03-31")).days) - 1)
@@ -49,6 +50,17 @@ def test_calculate_returns_returns_none_when_history_is_insufficient():
     tri = pd.Series([100.0], index=pd.to_datetime(["2024-01-01"]))
     returns = calculate_returns(tri, pd.Timestamp("2024-01-01"))
     assert all(value is None for value in returns.values())
+
+
+def test_calculate_returns_rejects_stale_period_start_anchor():
+    tri = pd.Series(
+        [100.0, 120.0],
+        index=pd.to_datetime(["2020-01-01", "2026-06-30"]),
+    )
+
+    returns = calculate_returns(tri, pd.Timestamp("2026-06-30"))
+
+    assert returns["5Y"] is None
 
 
 def test_calculate_relative_returns_subtracts_benchmark():
